@@ -20,6 +20,10 @@ class Category(TimeStamped):
     image = models.ImageField(
         _("image"), upload_to="categories/", blank=True, null=True
     )
+    image_url = models.URLField(
+        _("image (URL externe)"), blank=True,
+        help_text=_("Utilisée si aucune image n'est téléversée."),
+    )
     order = models.PositiveIntegerField(_("ordre d'affichage"), default=0)
     is_active = models.BooleanField(_("active"), default=True)
 
@@ -63,6 +67,14 @@ class Product(TimeStamped):
         related_name="products",
         on_delete=models.PROTECT,
     )
+    vendor = models.ForeignKey(
+        "vendors.Vendor",
+        verbose_name=_("vendeur"),
+        related_name="products",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     name = models.CharField(_("nom"), max_length=200)
     slug = models.SlugField(_("slug"), max_length=220, unique=True, blank=True)
     brand = models.CharField(_("marque"), max_length=120, blank=True)
@@ -84,6 +96,11 @@ class Product(TimeStamped):
     )
     badge = models.CharField(
         _("badge"), max_length=12, choices=Badge.choices, blank=True, default=""
+    )
+
+    image_url = models.URLField(
+        _("image (URL externe)"), blank=True,
+        help_text=_("Utilisée si aucune photo n'est téléversée. Pratique pour la démo."),
     )
 
     sku = models.CharField(_("référence (SKU)"), max_length=60, blank=True)

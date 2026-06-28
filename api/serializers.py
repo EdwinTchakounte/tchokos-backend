@@ -22,7 +22,7 @@ class CategorySerializer(serializers.ModelSerializer):
     def get_image(self, obj):
         if obj.image:
             return self.context["request"].build_absolute_uri(obj.image.url)
-        return None
+        return obj.image_url or None
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
@@ -55,11 +55,11 @@ class ProductListSerializer(serializers.ModelSerializer):
         img = obj.primary_image
         if img:
             return self.context["request"].build_absolute_uri(img.image.url)
-        return None
+        return obj.image_url or None
 
 
 class ProductDetailSerializer(ProductListSerializer):
-    images = ProductImageSerializer(many=True, read_only=True)
+    images = serializers.SerializerMethodField()
     sizes_list = serializers.SerializerMethodField()
 
     class Meta(ProductListSerializer.Meta):
@@ -69,6 +69,14 @@ class ProductDetailSerializer(ProductListSerializer):
 
     def get_sizes_list(self, obj):
         return [s.strip() for s in obj.sizes.split(",") if s.strip()]
+
+    def get_images(self, obj):
+        photos = list(obj.images.all())
+        if photos:
+            return ProductImageSerializer(photos, many=True, context=self.context).data
+        if obj.image_url:
+            return [{"id": 0, "image": obj.image_url, "alt": obj.name, "is_primary": True}]
+        return []
 
 
 # ---- Commande (lead WhatsApp) ----

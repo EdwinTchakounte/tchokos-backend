@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "catalog",
     "orders",
     "delivery",
+    "vendors",
     "siteconfig",
     "integrations",
     "api",
