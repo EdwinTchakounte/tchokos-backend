@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     # Apps métier Tchokos
     "catalog",
     "orders",
+    "delivery",
     "siteconfig",
     "integrations",
     "api",
@@ -253,6 +254,11 @@ BREVO_SENDER_EMAIL = env("BREVO_SENDER_EMAIL", "no-reply@tchokos.cm")
 # Tara Money (paiement Mobile Money — branché en phase 2)
 TARA_API_KEY = env("TARA_API_KEY")
 TARA_MERCHANT_ID = env("TARA_MERCHANT_ID")
+
+# Livraison : délai (heures) laissé au livreur pour accepter une course
+DELIVERY_ACCEPT_WINDOW_HOURS = int(env("DELIVERY_ACCEPT_WINDOW_HOURS", "4"))
+# Numéro service de la plateforme (rapport du soir des livraisons non validées)
+PLATFORM_SERVICE_PHONE = env("PLATFORM_SERVICE_PHONE", "")
 
 # Personnalisation de l'admin Django (back-office produits dédié)
 WAGTAIL_SITE_NAME = "Tchokos"

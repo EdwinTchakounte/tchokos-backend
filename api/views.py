@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from catalog.models import Category, Product
 from orders.models import Order, OrderItem
+from delivery.models import DeliveryZone, Delivery
 from siteconfig.models import BrandSettings
 from integrations import brevo
 from integrations import tara
@@ -20,6 +21,7 @@ from .serializers import (
     ProductDetailSerializer,
     OrderCreateSerializer,
     ContactSerializer,
+    DeliveryZoneSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,6 +117,12 @@ def site_config(request):
     })
 
 
+@api_view(["GET"])
+def delivery_zones(request):
+    zones = DeliveryZone.objects.filter(is_active=True)
+    return Response(DeliveryZoneSerializer(zones, many=True).data)
+
+
 def _generate_reference():
     return "TCH-" + secrets.token_hex(3).upper()
 
@@ -134,15 +142,21 @@ def create_order(request):
     product_ids = [it["product_id"] for it in data["items"]]
     products = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
 
+    # Zone de livraison (optionnelle) → frais
+    zone = None
+    if data.get("zone_id"):
+        zone = DeliveryZone.objects.filter(id=data["zone_id"], is_active=True).first()
+
     with transaction.atomic():
         order = Order.objects.create(
             reference=_generate_reference(),
             customer_name=data["customer_name"],
             phone=data["phone"],
-            city=data.get("city", ""),
+            city=data.get("city", "") or (zone.name if zone else ""),
             address=data.get("address", ""),
             note=data.get("note", ""),
             channel=Order.Channel.WHATSAPP,
+            delivery_fee=zone.fee if zone else 0,
         )
         lines = []
         for it in data["items"]:
@@ -165,22 +179,33 @@ def create_order(request):
         order.recompute_total()
         order.save(update_fields=["total"])
 
+        # Crée la livraison associée (statut « À assigner »)
+        Delivery.objects.create(order=order, zone=zone)
+
     settings_obj = BrandSettings.load(request_or_site=request)
 
     # Message WhatsApp pré-rempli
+    delivery_lines = ""
+    if zone:
+        delivery_lines = (
+            f"\n\nLivraison ({zone.name}) : {_fmt(zone.fee)} FCFA"
+            f"\nTotal à payer : {_fmt(order.grand_total)} FCFA"
+        )
     msg = (
         f"Bonjour Tchokos 👋\nJe souhaite commander (réf {order.reference}) :\n"
         + "\n".join(lines)
-        + f"\n\nTotal : {_fmt(order.total)} FCFA"
+        + f"\n\nSous-total : {_fmt(order.total)} FCFA"
+        + delivery_lines
         + f"\nNom : {order.customer_name}"
-        + (f"\nVille : {order.city}" if order.city else "")
+        + (f"\nZone : {zone.name}" if zone else "")
+        + (f"\nVille : {order.city}" if order.city and not zone else "")
     )
     wa_number = settings_obj.whatsapp_number or ""
     wa_link = f"https://wa.me/{wa_number}?text={quote(msg)}" if wa_number else ""
 
     # Hook paiement Tara (stub en phase 1)
     pay = tara.create_payment_link(
-        amount=order.total,
+        amount=order.grand_total,
         reference=order.reference,
         description=f"Commande Tchokos {order.reference}",
         customer_phone=order.phone,
@@ -211,6 +236,8 @@ def create_order(request):
         {
             "reference": order.reference,
             "total": order.total,
+            "delivery_fee": order.delivery_fee,
+            "grand_total": order.grand_total,
             "whatsapp_link": wa_link,
             "payment_link": order.payment_link,
             "payment_is_stub": pay.is_stub,

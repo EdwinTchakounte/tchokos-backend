@@ -2,6 +2,13 @@ from rest_framework import serializers
 
 from catalog.models import Category, Product, ProductImage
 from orders.models import Order, OrderItem
+from delivery.models import DeliveryZone
+
+
+class DeliveryZoneSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeliveryZone
+        fields = ["id", "name", "city", "fee", "eta_minutes"]
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -78,6 +85,7 @@ class OrderCreateSerializer(serializers.Serializer):
     city = serializers.CharField(max_length=120, required=False, allow_blank=True)
     address = serializers.CharField(max_length=255, required=False, allow_blank=True)
     note = serializers.CharField(required=False, allow_blank=True)
+    zone_id = serializers.IntegerField(required=False, allow_null=True)
     items = OrderItemInputSerializer(many=True)
 
     def validate_items(self, value):

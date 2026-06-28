@@ -39,7 +39,10 @@ class Order(models.Model):
         _("statut"), max_length=12, choices=Status.choices, default=Status.NEW
     )
     total = models.DecimalField(
-        _("total (FCFA)"), max_digits=12, decimal_places=0, default=0
+        _("sous-total articles (FCFA)"), max_digits=12, decimal_places=0, default=0
+    )
+    delivery_fee = models.DecimalField(
+        _("frais de livraison (FCFA)"), max_digits=10, decimal_places=0, default=0
     )
 
     # Hook paiement (rempli quand Tara Money est utilisé)
@@ -62,6 +65,10 @@ class Order(models.Model):
     def recompute_total(self):
         self.total = sum(item.line_total for item in self.items.all())
         return self.total
+
+    @property
+    def grand_total(self):
+        return self.total + self.delivery_fee
 
 
 class OrderItem(models.Model):
