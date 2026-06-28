@@ -33,7 +33,9 @@ class ProductImageSerializer(serializers.ModelSerializer):
         fields = ["id", "image", "alt", "is_primary"]
 
     def get_image(self, obj):
-        return self.context["request"].build_absolute_uri(obj.image.url)
+        if obj.image:
+            return self.context["request"].build_absolute_uri(obj.image.url)
+        return obj.image_url or None
 
 
 class ReviewSerializer(serializers.ModelSerializer):
@@ -46,6 +48,7 @@ class ProductListSerializer(serializers.ModelSerializer):
     category_slug = serializers.CharField(source="category.slug", read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)
     image = serializers.SerializerMethodField()
+    hover_image = serializers.SerializerMethodField()
     discount_percent = serializers.IntegerField(read_only=True)
     in_stock = serializers.BooleanField(read_only=True)
     rating_avg = serializers.ReadOnlyField()
@@ -57,14 +60,26 @@ class ProductListSerializer(serializers.ModelSerializer):
             "id", "name", "slug", "brand", "price", "compare_at_price",
             "discount_percent", "badge", "target", "in_stock",
             "rating_avg", "rating_count",
-            "category_slug", "category_name", "image",
+            "category_slug", "category_name", "image", "hover_image",
         ]
+
+    def _img_url(self, img):
+        if img.image:
+            return self.context["request"].build_absolute_uri(img.image.url)
+        return img.image_url or None
 
     def get_image(self, obj):
         img = obj.primary_image
         if img:
-            return self.context["request"].build_absolute_uri(img.image.url)
+            return self._img_url(img)
         return obj.image_url or None
+
+    def get_hover_image(self, obj):
+        # 2e image de la galerie (pour l'effet de survol sur la carte)
+        photos = list(obj.images.all())
+        if len(photos) > 1:
+            return self._img_url(photos[1])
+        return None
 
 
 class ProductDetailSerializer(ProductListSerializer):

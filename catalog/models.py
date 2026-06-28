@@ -187,10 +187,21 @@ class ProductImage(models.Model):
     product = models.ForeignKey(
         Product, related_name="images", on_delete=models.CASCADE
     )
-    image = models.ImageField(_("image"), upload_to="products/")
+    image = models.ImageField(_("image"), upload_to="products/", blank=True)
+    image_url = models.URLField(
+        _("image (URL externe)"), blank=True,
+        help_text=_("Utilisée si aucune image n'est téléversée."),
+    )
     alt = models.CharField(_("texte alternatif"), max_length=200, blank=True)
     is_primary = models.BooleanField(_("image principale"), default=False)
     order = models.PositiveIntegerField(_("ordre"), default=0)
+
+    @property
+    def display_url(self):
+        """URL utilisable côté front (photo téléversée prioritaire)."""
+        if self.image:
+            return self.image.url
+        return self.image_url or ""
 
     class Meta:
         verbose_name = _("photo produit")
