@@ -3,6 +3,7 @@ import secrets
 from urllib.parse import quote
 
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -60,7 +61,14 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         if params.get("in_stock") in ("1", "true", "yes"):
             qs = qs.filter(stock_quantity__gt=0)
         if search := params.get("search"):
-            qs = qs.filter(name__icontains=search)
+            terms = search.split()
+            for term in terms:
+                qs = qs.filter(
+                    Q(name__icontains=term)
+                    | Q(brand__icontains=term)
+                    | Q(description__icontains=term)
+                    | Q(category__name__icontains=term)
+                )
         return qs
 
 
