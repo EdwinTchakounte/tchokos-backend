@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Avg
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
@@ -150,6 +151,36 @@ class Product(TimeStamped):
     def primary_image(self):
         img = self.images.filter(is_primary=True).first() or self.images.first()
         return img
+
+    @property
+    def rating_avg(self):
+        avg = self.reviews.filter(is_published=True).aggregate(a=Avg("rating"))["a"]
+        return round(avg, 1) if avg else 0
+
+    @property
+    def rating_count(self):
+        return self.reviews.filter(is_published=True).count()
+
+
+class Review(models.Model):
+    """Avis client sur un produit."""
+
+    product = models.ForeignKey(
+        Product, related_name="reviews", on_delete=models.CASCADE
+    )
+    author_name = models.CharField(_("nom du client"), max_length=120)
+    rating = models.PositiveSmallIntegerField(_("note (1-5)"), default=5)
+    comment = models.TextField(_("commentaire"), blank=True)
+    is_published = models.BooleanField(_("publié"), default=True)
+    created_at = models.DateTimeField(_("date"), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("avis")
+        verbose_name_plural = _("avis")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.author_name} — {self.rating}★ ({self.product.name})"
 
 
 class ProductImage(models.Model):

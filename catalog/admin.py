@@ -1,7 +1,15 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import Category, Product, ProductImage
+from .models import Category, Product, ProductImage, Review
+
+
+@admin.register(Review)
+class ReviewAdmin(admin.ModelAdmin):
+    list_display = ("author_name", "product", "rating", "is_published", "created_at")
+    list_filter = ("rating", "is_published")
+    list_editable = ("is_published",)
+    search_fields = ("author_name", "product__name", "comment")
 
 
 @admin.register(Category)
