@@ -15,8 +15,13 @@ urlpatterns = [
     path("delivery-zones/", views.delivery_zones, name="delivery-zones"),
     path("orders/", views.create_order, name="create-order"),
     path("contact/", views.contact, name="contact"),
-    # Espace livreur
-    path("courier/login/", courier_views.courier_login, name="courier-login"),
+    # Espace livreur — auth OTP + inscription
+    path("courier/zones/", courier_views.courier_zones, name="courier-zones"),
+    path("courier/register/", courier_views.courier_register, name="courier-register"),
+    path("courier/request-otp/", courier_views.courier_request_otp, name="courier-request-otp"),
+    path("courier/verify-otp/", courier_views.courier_verify_otp, name="courier-verify-otp"),
+    path("courier/me/", courier_views.courier_me, name="courier-me"),
+    path("courier/availability/", courier_views.courier_set_availability, name="courier-availability"),
     path("courier/deliveries/", courier_views.courier_deliveries, name="courier-deliveries"),
     path("courier/deliveries/<int:pk>/accept/", courier_views.courier_accept, name="courier-accept"),
     path("courier/deliveries/<int:pk>/complete/", courier_views.courier_complete, name="courier-complete"),

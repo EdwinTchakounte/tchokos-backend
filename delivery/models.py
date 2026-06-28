@@ -40,12 +40,19 @@ class Courier(models.Model):
 
     name = models.CharField(_("nom"), max_length=150)
     phone = models.CharField(_("téléphone"), max_length=30, unique=True)
+    city = models.CharField(_("ville"), max_length=80, default="Douala")
+    vehicle = models.CharField(
+        _("moyen de transport"), max_length=40, blank=True, default="Moto",
+    )
     zones = models.ManyToManyField(
         DeliveryZone, blank=True, related_name="couriers",
         verbose_name=_("zones couvertes"),
     )
     is_active = models.BooleanField(_("actif"), default=True)
     is_available = models.BooleanField(_("disponible"), default=True)
+    # Authentification par OTP (code envoyé par SMS/WhatsApp en prod)
+    otp_code = models.CharField(_("code OTP"), max_length=6, blank=True)
+    otp_expires_at = models.DateTimeField(_("OTP expire le"), null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
