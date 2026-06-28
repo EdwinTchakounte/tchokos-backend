@@ -10,7 +10,7 @@ from rest_framework.response import Response
 
 from catalog.models import Category, Product
 from orders.models import Order, OrderItem
-from delivery.models import DeliveryZone, Delivery
+from delivery.models import DeliveryZone, Delivery, Courier
 from siteconfig.models import BrandSettings
 from integrations import brevo
 from integrations import tara
@@ -179,8 +179,16 @@ def create_order(request):
         order.recompute_total()
         order.save(update_fields=["total"])
 
-        # Crée la livraison associée (statut « À assigner »)
-        Delivery.objects.create(order=order, zone=zone)
+        # Crée la livraison et l'assigne automatiquement à un livreur de la zone
+        # (démarre la fenêtre de 4h). Sinon elle reste « À assigner ».
+        delivery = Delivery.objects.create(order=order, zone=zone)
+        if zone:
+            courier = (
+                Courier.objects.filter(is_active=True, is_available=True, zones=zone)
+                .first()
+            )
+            if courier:
+                delivery.assign(courier)
 
     settings_obj = BrandSettings.load(request_or_site=request)
 
