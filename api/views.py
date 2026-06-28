@@ -3,7 +3,7 @@ import secrets
 from urllib.parse import quote
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, F
 from rest_framework import viewsets, mixins, status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -27,6 +27,13 @@ logger = logging.getLogger(__name__)
 
 def _fmt(amount):
     return f"{amount:,.0f}".replace(",", " ")
+
+
+def _as_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -60,15 +67,33 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(is_featured=True)
         if params.get("in_stock") in ("1", "true", "yes"):
             qs = qs.filter(stock_quantity__gt=0)
+        if params.get("on_sale") in ("1", "true", "yes"):
+            qs = qs.filter(compare_at_price__gt=F("price"))
+
+        # Fourchette de prix (ignore les valeurs non numériques)
+        if (mn := _as_int(params.get("min_price"))) is not None:
+            qs = qs.filter(price__gte=mn)
+        if (mx := _as_int(params.get("max_price"))) is not None:
+            qs = qs.filter(price__lte=mx)
+
         if search := params.get("search"):
-            terms = search.split()
-            for term in terms:
+            for term in search.split():
                 qs = qs.filter(
                     Q(name__icontains=term)
                     | Q(brand__icontains=term)
                     | Q(description__icontains=term)
                     | Q(category__name__icontains=term)
                 )
+
+        # Tri
+        ordering = {
+            "price_asc": ("price",),
+            "price_desc": ("-price",),
+            "name": ("name",),
+            "recent": ("-created_at",),
+        }.get(params.get("sort", ""))
+        if ordering:
+            qs = qs.order_by(*ordering)
         return qs
 
 
