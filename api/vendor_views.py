@@ -35,9 +35,12 @@ def vendor_from_request(request):
 
 def _product_dict(p: Product, request):
     img = p.primary_image
-    image = (
-        request.build_absolute_uri(img.image.url) if img else (p.image_url or None)
-    )
+    if img and img.image:
+        image = request.build_absolute_uri(img.image.url)
+    elif img and img.image_url:
+        image = img.image_url
+    else:
+        image = p.image_url or None
     return {
         "id": p.id,
         "name": p.name,
