@@ -14,6 +14,7 @@ from delivery.models import DeliveryZone, Delivery, Courier
 from siteconfig.models import BrandSettings
 from integrations import brevo
 from integrations import tara
+from integrations import openrouter
 
 from .serializers import (
     CategorySerializer,
@@ -115,6 +116,28 @@ def site_config(request):
             "instagram": s.instagram_url,
         },
     })
+
+
+@api_view(["POST"])
+def chat(request):
+    """Assistant Tchokos (chatbot via OpenRouter)."""
+    messages = request.data.get("messages") or []
+    if not isinstance(messages, list) or not messages:
+        return Response({"detail": "messages requis."}, status=status.HTTP_400_BAD_REQUEST)
+    # Nettoie / borne l'historique
+    clean = [
+        {"role": m.get("role", "user"), "content": str(m.get("content", ""))[:2000]}
+        for m in messages
+        if m.get("content")
+    ][-12:]
+    try:
+        reply = openrouter.chat(clean)
+    except openrouter.OpenRouterError:
+        reply = (
+            "Désolé, je n'arrive pas à répondre pour le moment. Écrivez-nous sur "
+            "WhatsApp au +237 673 398 046 🙏"
+        )
+    return Response({"reply": reply})
 
 
 @api_view(["GET"])

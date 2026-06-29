@@ -15,6 +15,7 @@ urlpatterns = [
     path("delivery-zones/", views.delivery_zones, name="delivery-zones"),
     path("orders/", views.create_order, name="create-order"),
     path("contact/", views.contact, name="contact"),
+    path("chat/", views.chat, name="chat"),
     # Espace livreur — auth OTP + inscription
     path("courier/zones/", courier_views.courier_zones, name="courier-zones"),
     path("courier/register/", courier_views.courier_register, name="courier-register"),

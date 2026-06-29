@@ -12,15 +12,15 @@ from catalog.models import Product, ProductImage
 IMG = "https://images.unsplash.com/photo-{}?w=800&q=80&auto=format&fit=crop"
 
 POOLS = {
-    "baskets-sneakers": ["1542291026-7eec264c27ff", "1556906781-9a412961c28c", "1595950653106-6c9ebd614d3a", "1606107557195-0e29a4b5b4aa", "1556905055-8f358a7a47b2"],
-    "chaussures-de-ville": ["1614252369475-531eba835eb1", "1533867617858-e7b97e060509", "1490481651871-ab68de25d43d"],
-    "sandales-claquettes": ["1561808843-7adeb9606939", "1605733513597-a8f8341084e6"],
-    "chaussures-femme": ["1535043934128-cf0b28d52f95", "1542840410-3092f99611a3"],
-    "chaussures-enfant": ["1518894781321-630e638d0742", "1606107557195-0e29a4b5b4aa"],
-    "vetements-homme": ["1576566588028-4147f3842f27", "1591047139829-d91aecb6caea", "1547996160-81dfa63595aa"],
+    "baskets-sneakers": ["1542291026-7eec264c27ff", "1556906781-9a412961c28c", "1595950653106-6c9ebd614d3a", "1607522370275-f14206abe5d3"],
+    "chaussures-de-ville": ["1533867617858-e7b97e060509", "1531310197839-ccf54634509e"],
+    "sandales-claquettes": ["1603487742131-4160ec999306", "1543163521-1bf539c55dd2"],
+    "chaussures-femme": ["1535043934128-cf0b28d52f95", "1610398752800-146f269dfcc8"],
+    "chaussures-enfant": ["1514989940723-e8e51635b782", "1628253747716-0c4f5c90fdda"],
+    "vetements-homme": ["1576566588028-4147f3842f27", "1591047139829-d91aecb6caea"],
     "vetements-femme": ["1595777457583-95e059d581b8", "1434056886845-dac89ffe9b56"],
     "sacs-bagagerie": ["1584917865442-de89df76afd3", "1553062407-98eeb64c6a62", "1565026057447-bc90a3dceb87"],
-    "montres-bijoux": ["1523275335684-37898b6baf30", "1547996160-81dfa63595aa"],
+    "montres-bijoux": ["1523275335684-37898b6baf30"],
 }
 
 

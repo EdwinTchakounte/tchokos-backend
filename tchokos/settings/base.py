@@ -256,6 +256,10 @@ BREVO_SENDER_EMAIL = env("BREVO_SENDER_EMAIL", "no-reply@tchokos.cm")
 TARA_API_KEY = env("TARA_API_KEY")
 TARA_MERCHANT_ID = env("TARA_MERCHANT_ID")
 
+# OpenRouter (chatbot / assistant Tchokos)
+OPENROUTER_API_KEY = env("OPENROUTER_API_KEY")
+OPENROUTER_MODEL = env("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+
 # Livraison : délai (heures) laissé au livreur pour accepter une course
 DELIVERY_ACCEPT_WINDOW_HOURS = int(env("DELIVERY_ACCEPT_WINDOW_HOURS", "4"))
 # Numéro service de la plateforme (rapport du soir des livraisons non validées)
