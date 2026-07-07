@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
+    "anymail",
     # Django
     "django.contrib.admin",
     "django.contrib.auth",
@@ -272,11 +273,15 @@ CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "http://localhost:3000")
 # ---------------------------------------------------------------------------
 # Intégrations
 # ---------------------------------------------------------------------------
-# Brevo (emails transactionnels)
+# Brevo (emails transactionnels) — via django-anymail (backend Brevo standard).
+# Les 3 variables suffisent à activer Brevo : BREVO_API_KEY + expéditeur
+# (BREVO_SENDER_NAME / BREVO_SENDER_EMAIL, agrégés dans DEFAULT_FROM_EMAIL).
 BREVO_API_KEY = env("BREVO_API_KEY")
 BREVO_SENDER_NAME = env("BREVO_SENDER_NAME", "Tchokos")
 BREVO_SENDER_EMAIL = env("BREVO_SENDER_EMAIL", "no-reply@tchokos-sarl.com")
 DEFAULT_FROM_EMAIL = f"{BREVO_SENDER_NAME} <{BREVO_SENDER_EMAIL}>"
+EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
+ANYMAIL = {"BREVO_API_KEY": BREVO_API_KEY}
 
 # URL du frontend (liens dans les emails : reset de mot de passe, etc.)
 FRONTEND_URL = env("FRONTEND_URL", "http://localhost:3000")

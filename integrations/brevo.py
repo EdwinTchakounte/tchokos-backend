@@ -1,19 +1,21 @@
-"""Client Brevo (ex-Sendinblue) pour l'envoi d'emails transactionnels.
+"""Envoi d'emails transactionnels via Brevo — sur le backend django-anymail.
 
-Utilise l'API HTTP v3 de Brevo (https://developers.brevo.com/).
-Configurer ``BREVO_API_KEY`` dans le fichier .env.
+L'API publique (`send_email(...)`) est inchangée pour les appelants ; seul le
+transport a changé : on construit un ``EmailMultiAlternatives`` Django qui part
+par le backend ``anymail.backends.brevo`` configuré dans les settings
+(``EMAIL_BACKEND`` + ``ANYMAIL['BREVO_API_KEY']``).
 
-Si la clé n'est pas configurée, les appels sont simplement loggés (no-op),
-ce qui permet de développer la vitrine sans bloquer sur l'email.
+- En dev, ``EMAIL_BACKEND`` = console → les emails s'affichent dans les logs.
+- Sans ``BREVO_API_KEY`` (et hors DEBUG), on saute l'envoi (no-op) pour ne pas
+  bloquer une commande.
 """
 import logging
 
-import requests
 from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
+from django.utils.html import strip_tags
 
 logger = logging.getLogger(__name__)
-
-BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
 
 class BrevoError(Exception):
@@ -30,48 +32,38 @@ def send_email(
     template_id: int | None = None,
     params: dict | None = None,
 ):
-    """Envoie un email transactionnel via Brevo.
+    """Envoie un email transactionnel.
 
-    Si ``template_id`` est fourni, on utilise un template Brevo (avec ``params``),
-    sinon on envoie ``html_content`` brut.
+    Si ``template_id`` est fourni, on utilise un template Brevo (avec ``params``
+    en variables globales), sinon on envoie ``html_content`` (+ version texte).
     """
     api_key = getattr(settings, "BREVO_API_KEY", "")
-    if not api_key:
+    if not api_key and not getattr(settings, "DEBUG", False):
         logger.warning(
             "[Brevo] BREVO_API_KEY absente — email NON envoyé (sujet=%r, dest=%s)",
             subject, to_email,
         )
         return {"skipped": True}
 
-    payload = {
-        "sender": {
-            "name": getattr(settings, "BREVO_SENDER_NAME", "Tchokos"),
-            "email": getattr(settings, "BREVO_SENDER_EMAIL", "no-reply@tchokos-sarl.com"),
-        },
-        "to": [{"email": to_email, "name": to_name or to_email}],
-        "subject": subject,
-    }
+    to = f"{to_name} <{to_email}>" if to_name else to_email
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body=strip_tags(html_content) if html_content else "",
+        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+        to=[to],
+        reply_to=[reply_to] if reply_to else None,
+    )
     if template_id:
-        payload["templateId"] = template_id
-        payload["params"] = params or {}
-    else:
-        payload["htmlContent"] = html_content
-    if reply_to:
-        payload["replyTo"] = {"email": reply_to}
+        # Attributs reconnus par le backend Brevo d'Anymail.
+        msg.template_id = template_id
+        msg.merge_global_data = params or {}
+    elif html_content:
+        msg.attach_alternative(html_content, "text/html")
 
     try:
-        resp = requests.post(
-            BREVO_ENDPOINT,
-            json=payload,
-            headers={"api-key": api_key, "content-type": "application/json"},
-            timeout=10,
-        )
-    except requests.RequestException as exc:
-        logger.error("[Brevo] échec réseau: %s", exc)
+        msg.send(fail_silently=False)
+    except Exception as exc:  # anymail.exceptions.* ou erreurs réseau
+        logger.error("[Brevo] échec envoi (sujet=%r, dest=%s): %s", subject, to_email, exc)
         raise BrevoError(str(exc)) from exc
 
-    if resp.status_code >= 300:
-        logger.error("[Brevo] erreur %s: %s", resp.status_code, resp.text)
-        raise BrevoError(f"Brevo {resp.status_code}: {resp.text}")
-
-    return resp.json() if resp.content else {"ok": True}
+    return {"ok": True}
