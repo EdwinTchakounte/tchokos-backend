@@ -39,6 +39,7 @@ class Order(models.Model):
     )
     customer_name = models.CharField(_("nom du client"), max_length=150)
     phone = models.CharField(_("téléphone"), max_length=30)
+    email = models.EmailField(_("email"), blank=True)
     city = models.CharField(_("ville"), max_length=120, blank=True)
     address = models.CharField(_("adresse / quartier"), max_length=255, blank=True)
     note = models.TextField(_("note du client"), blank=True)

@@ -154,6 +154,51 @@ def _generate_reference():
     return "TCH-" + secrets.token_hex(3).upper()
 
 
+def _maybe_create_customer_account(order, data, request):
+    """Crée un compte client (canal Tara) et envoie l'email d'activation.
+
+    Best-effort et **ne lève jamais** : un échec ici ne doit pas casser la
+    commande ni le paiement. Règles :
+      - si le client est déjà connecté → rien à créer ;
+      - compte identifié par email (unique) ; réutilisé s'il existe déjà ;
+      - téléphone posé seulement s'il est libre (``User.phone`` est unique) ;
+      - email d'activation envoyé uniquement pour un compte neuf / sans mot de
+        passe utilisable (évite de re-solliciter un compte déjà actif).
+    """
+    if request.user.is_authenticated:
+        return
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return
+    try:
+        from accounts.models import User
+        from accounts.emails import send_account_invite
+
+        user = User.objects.filter(email__iexact=email).first()
+        created = False
+        if user is None:
+            user = User(
+                email=email,
+                full_name=data.get("customer_name", ""),
+                role=User.Role.CLIENT,
+            )
+            phone = (data.get("phone") or "").strip()
+            if phone and not User.objects.filter(phone=phone).exists():
+                user.phone = phone
+            user.set_unusable_password()
+            user.save()
+            created = True
+
+        if order.user_id is None:
+            order.user = user
+            order.save(update_fields=["user", "updated_at"])
+
+        if created or not user.has_usable_password():
+            send_account_invite(user)
+    except Exception:  # noqa: BLE001 — best-effort, ne jamais casser la commande
+        logger.exception("Création compte client échouée (email=%s)", email)
+
+
 @api_view(["POST"])
 def create_order(request):
     """Crée une commande (lead) et renvoie un lien WhatsApp pré-rempli.
@@ -183,6 +228,7 @@ def create_order(request):
             user=request.user if request.user.is_authenticated else None,
             customer_name=data["customer_name"],
             phone=data["phone"],
+            email=data.get("email", ""),
             city=data.get("city", "") or (zone.name if zone else ""),
             address=data.get("address", ""),
             note=data.get("note", ""),
@@ -262,6 +308,9 @@ def create_order(request):
         if payment_url:
             order.payment_link = payment_url
         order.save(update_fields=["payment_link", "payment_reference"])
+
+        # Compte client automatique (canal Tara uniquement) + email d'activation.
+        _maybe_create_customer_account(order, data, request)
 
     # Pousse la livraison vers Sendo (suivi externe) — uniquement si livraison,
     # et best-effort.

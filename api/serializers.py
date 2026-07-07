@@ -121,6 +121,9 @@ class OrderItemInputSerializer(serializers.Serializer):
 class OrderCreateSerializer(serializers.Serializer):
     customer_name = serializers.CharField(max_length=150)
     phone = serializers.CharField(max_length=30)
+    # Email obligatoire : sert à créer le compte client (canal Tara) et à tracer
+    # la commande. Requis sur les deux canaux (WhatsApp et Tara).
+    email = serializers.EmailField(required=True)
     city = serializers.CharField(max_length=120, required=False, allow_blank=True)
     address = serializers.CharField(max_length=255, required=False, allow_blank=True)
     note = serializers.CharField(required=False, allow_blank=True)
