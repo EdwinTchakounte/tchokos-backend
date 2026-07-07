@@ -1,6 +1,6 @@
 from django.contrib import admin, messages
 
-from .models import DeliveryZone, Courier, Delivery
+from .models import DeliveryZone, Courier, Delivery, Settlement
 
 
 @admin.register(DeliveryZone)
@@ -64,3 +64,23 @@ class DeliveryAdmin(admin.ModelAdmin):
     def action_mark_reviewed(self, request, queryset):
         n = queryset.update(reviewed=True, flagged_for_review=False)
         self.message_user(request, f"{n} livraison(s) marquée(s) vérifiées.")
+
+
+@admin.register(Settlement)
+class SettlementAdmin(admin.ModelAdmin):
+    list_display = (
+        "delivery", "courier", "direction", "amount", "collected",
+        "courier_fee", "is_cod", "status", "settled_at",
+    )
+    list_filter = ("status", "direction", "is_cod")
+    search_fields = ("delivery__order__reference", "courier__name")
+    readonly_fields = ("created_at", "updated_at", "settled_at")
+    actions = ("action_mark_settled",)
+
+    @admin.action(description="Marquer comme réglé")
+    def action_mark_settled(self, request, queryset):
+        n = 0
+        for s in queryset.filter(status=Settlement.Status.PENDING):
+            s.mark_settled()
+            n += 1
+        self.message_user(request, f"{n} décaissement(s) réglé(s).")

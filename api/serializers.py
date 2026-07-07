@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from catalog.models import Category, Product, ProductImage, Review
@@ -125,6 +126,9 @@ class OrderCreateSerializer(serializers.Serializer):
     note = serializers.CharField(required=False, allow_blank=True)
     zone_id = serializers.IntegerField(required=False, allow_null=True)
     items = OrderItemInputSerializer(many=True)
+    # False = paiement direct Tara SANS livraison (retrait / pas d'expédition) :
+    # on ne crée alors ni livraison interne ni colis Sendo.
+    with_delivery = serializers.BooleanField(required=False, default=True)
 
     def validate_items(self, value):
         if not value:
@@ -137,3 +141,46 @@ class ContactSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True)
     phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
     message = serializers.CharField()
+
+
+# ---- Espace client : « Mes commandes » + suivi colis Sendo ----
+
+class MyOrderItemSerializer(serializers.ModelSerializer):
+    line_total = serializers.IntegerField()
+
+    class Meta:
+        model = OrderItem
+        fields = ["product_name", "size", "quantity", "unit_price", "line_total"]
+
+
+class MyOrderSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    grand_total = serializers.IntegerField(read_only=True)
+    items = MyOrderItemSerializer(many=True, read_only=True)
+    tracking_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = [
+            "reference",
+            "status",
+            "status_display",
+            "channel",
+            "total",
+            "delivery_fee",
+            "grand_total",
+            "city",
+            "address",
+            "created_at",
+            "items",
+            "sendo_status",
+            "sendo_tracking_token",
+            "tracking_url",
+        ]
+
+    def get_tracking_url(self, obj):
+        """Lien vers la page publique de suivi Sendo (si un colis existe)."""
+        base = getattr(settings, "SENDO_PUBLIC_URL", "") or ""
+        if obj.sendo_tracking_token and base:
+            return f"{base.rstrip('/')}/track/{obj.sendo_tracking_token}"
+        return ""

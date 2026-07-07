@@ -1,3 +1,9 @@
+# Secrets / VCS — NE JAMAIS embarquer dans l'image
+.env
+.env.*
+.git
+.github
+
 # Django project
 /media/
 /static/

@@ -57,7 +57,7 @@ BRAND = {
     "tagline": "Le super grossiste chaussures & vêtements d'Akwa, Douala.",
     "whatsapp_number": "237673398046",
     "phone": "+237 6 73 39 80 46",
-    "email": "contact@tchokos.cm",  # placeholder — email public non trouvé
+    "email": "contact@tchokos-sarl.com",  # email public (footer / contact)
     "address": "Douala, Akwa, rond-point Douche, immeuble Socsuba (en face du Faya Hôtel)",
     "tiktok_url": "https://www.tiktok.com/@tchokos.sarl",
     "facebook_url": "https://www.facebook.com/tchokosgrossiste",

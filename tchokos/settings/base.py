@@ -42,9 +42,11 @@ def env_list(key, default=""):
 
 INSTALLED_APPS = [
     # Apps métier Tchokos
+    "accounts",
     "catalog",
     "orders",
     "delivery",
+    "payments",
     "vendors",
     "siteconfig",
     "integrations",
@@ -69,6 +71,8 @@ INSTALLED_APPS = [
     "taggit",
     # API / tiers
     "rest_framework",
+    "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     # Django
     "django.contrib.admin",
@@ -232,8 +236,29 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.JSONRenderer",
         "rest_framework.renderers.BrowsableAPIRenderer",
     ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 24,
+}
+
+# ---------------------------------------------------------------------------
+# Authentification — User custom (email) + JWT
+# ---------------------------------------------------------------------------
+AUTH_USER_MODEL = "accounts.User"
+
+from datetime import timedelta  # noqa: E402
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
 }
 
 # ---------------------------------------------------------------------------
@@ -250,15 +275,37 @@ CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "http://localhost:3000")
 # Brevo (emails transactionnels)
 BREVO_API_KEY = env("BREVO_API_KEY")
 BREVO_SENDER_NAME = env("BREVO_SENDER_NAME", "Tchokos")
-BREVO_SENDER_EMAIL = env("BREVO_SENDER_EMAIL", "no-reply@tchokos.cm")
+BREVO_SENDER_EMAIL = env("BREVO_SENDER_EMAIL", "no-reply@tchokos-sarl.com")
+DEFAULT_FROM_EMAIL = f"{BREVO_SENDER_NAME} <{BREVO_SENDER_EMAIL}>"
 
-# Tara Money (paiement Mobile Money — branché en phase 2)
+# URL du frontend (liens dans les emails : reset de mot de passe, etc.)
+FRONTEND_URL = env("FRONTEND_URL", "http://localhost:3000")
+
+# Tara Money (paiement Mobile Money — MTN MoMo / Orange Money Cameroun)
 TARA_API_KEY = env("TARA_API_KEY")
 TARA_MERCHANT_ID = env("TARA_MERCHANT_ID")
+# Tara ne signe pas ses webhooks (pas de HMAC) ; ce secret reste inutilisé,
+# la sécurité repose sur HTTPS + URL secrète + vérif du businessId/merchantId.
+TARA_WEBHOOK_SECRET = env("TARA_WEBHOOK_SECRET")
+# Base publique HTTPS du backend — sert à construire l'URL de webhook envoyée
+# à Tara ({PUBLIC_BASE_URL}/api/payments/webhook/tara/). Indispensable en prod.
+PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", "http://localhost:8010")
+# Modes test — À LAISSER FALSE EN PROD (valident un paiement sans Tara / sans
+# contrôle de montant). Réservés à la recette locale.
+PAYMENTS_TEST_AUTO_VALIDATE = env_bool("PAYMENTS_TEST_AUTO_VALIDATE", False)
+PAYMENTS_TEST_ALLOW_ANY_AMOUNT = env_bool("PAYMENTS_TEST_ALLOW_ANY_AMOUNT", False)
 
 # OpenRouter (chatbot / assistant Tchokos)
 OPENROUTER_API_KEY = env("OPENROUTER_API_KEY")
 OPENROUTER_MODEL = env("OPENROUTER_MODEL", "openai/gpt-4o-mini")
+
+# Sendo (plateforme de suivi de livraison — branchement externe)
+SENDO_API_URL = env("SENDO_API_URL", "")
+SENDO_API_KEY = env("SENDO_API_KEY", "")
+SENDO_WEBHOOK_SECRET = env("SENDO_WEBHOOK_SECRET", "")
+# Base publique Sendo pour les liens de suivi colis ouverts par le client
+# (peut différer de l'URL API : ex. tunnel HTTPS pour le mobile). Défaut = API.
+SENDO_PUBLIC_URL = env("SENDO_PUBLIC_URL", SENDO_API_URL)
 
 # Livraison : délai (heures) laissé au livreur pour accepter une course
 DELIVERY_ACCEPT_WINDOW_HOURS = int(env("DELIVERY_ACCEPT_WINDOW_HOURS", "4"))

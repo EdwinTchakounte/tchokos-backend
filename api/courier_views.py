@@ -1,65 +1,40 @@
-"""API de l'espace livreur — module de connexion complet (OTP + inscription).
+"""API de l'espace livreur.
 
-Auth par OTP (code à 6 chiffres) « envoyé » au téléphone. En démo, le code est
-renvoyé dans la réponse (champ ``demo_code``) et loggé ; en production il serait
-envoyé par SMS/WhatsApp (Brevo / passerelle SMS).
+Authentification désormais unifiée via ``accounts`` : le livreur a un compte
+``User`` (email + mot de passe, ou OTP téléphone) et un profil ``Courier`` lié.
+Les endpoints protégés utilisent le JWT (``request.user``) + la permission
+``IsCourier``. L'inscription crée le User et le profil livreur.
 """
 import logging
-import secrets
-from datetime import timedelta
 
-from django.core import signing
-from django.db.models import Q, Sum
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 
+from accounts.permissions import IsCourier
+from accounts.serializers import UserSerializer
 from delivery.models import Courier, Delivery, DeliveryZone
 
 logger = logging.getLogger(__name__)
-
-SALT = "tchokos-courier-auth"
-TOKEN_MAX_AGE = 60 * 60 * 24 * 30
-OTP_TTL_MIN = 5
-
-
-# ----------------------------- helpers -----------------------------
-
-def make_token(courier: Courier) -> str:
-    return signing.dumps({"cid": courier.id}, salt=SALT)
-
-
-def courier_from_request(request):
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return None
-    try:
-        data = signing.loads(auth[7:], salt=SALT, max_age=TOKEN_MAX_AGE)
-    except signing.BadSignature:
-        return None
-    return Courier.objects.filter(id=data.get("cid"), is_active=True).first()
+User = get_user_model()
 
 
 def _norm(phone: str) -> str:
     return (phone or "").replace(" ", "").lstrip("+")
 
 
-def _find_courier(phone: str):
-    n = _norm(phone)
-    return (
-        Courier.objects.filter(is_active=True)
-        .filter(Q(phone=phone) | Q(phone=n) | Q(phone="237" + n))
-        .first()
-    )
-
-
 def _stats(courier: Courier):
     d = Delivery.objects.filter(courier=courier)
     completed = d.filter(status=Delivery.Status.COMPLETED)
-    earnings = (
-        completed.aggregate(s=Sum("order__delivery_fee"))["s"] or 0
-    )
+    earnings = completed.aggregate(s=Sum("order__delivery_fee"))["s"] or 0
     return {
         "assigned": d.filter(status=Delivery.Status.ASSIGNED).count(),
         "in_progress": d.filter(status=Delivery.Status.ACCEPTED).count(),
@@ -68,10 +43,6 @@ def _stats(courier: Courier):
         "earnings": str(earnings),
         "deliveries_total": d.count(),
     }
-
-
-def _fmt(amount):
-    return f"{amount:,.0f}".replace(",", " ")
 
 
 def _serialize_delivery(dv: Delivery):
@@ -122,92 +93,88 @@ def _profile(courier: Courier):
     }
 
 
-# ----------------------------- auth (OTP) -----------------------------
+def _courier_of(request):
+    """Profil livreur de l'utilisateur connecté (None sinon)."""
+    return getattr(request.user, "courier_profile", None)
+
+
+# ----------------------------- public / inscription -----------------------------
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def courier_zones(request):
     zones = DeliveryZone.objects.filter(is_active=True)
     return Response([{"id": z.id, "name": z.name, "fee": str(z.fee)} for z in zones])
 
 
 @api_view(["POST"])
+@permission_classes([AllowAny])
 def courier_register(request):
+    """Inscription livreur : crée le compte User (rôle livreur) + le profil Courier."""
     name = (request.data.get("name") or "").strip()
-    phone = (request.data.get("phone") or "").strip()
+    email = (request.data.get("email") or "").strip().lower()
+    password = request.data.get("password") or ""
+    phone = _norm(request.data.get("phone") or "")
     vehicle = (request.data.get("vehicle") or "Moto").strip()
     zone_ids = request.data.get("zone_ids") or []
-    if not name or not phone:
-        return Response({"detail": "Nom et téléphone obligatoires."}, status=400)
-    if _find_courier(phone) or Courier.objects.filter(phone=_norm(phone)).exists():
-        return Response({"detail": "Ce numéro est déjà enregistré. Connectez-vous."}, status=409)
-    courier = Courier.objects.create(
-        name=name, phone=_norm(phone), vehicle=vehicle, is_active=True, is_available=True
-    )
-    if zone_ids:
-        courier.zones.set(DeliveryZone.objects.filter(id__in=zone_ids))
-    return Response({"detail": "Compte créé. Connectez-vous avec votre numéro."}, status=201)
 
+    if not name or not email or not password or not phone:
+        return Response({"detail": "Nom, email, téléphone et mot de passe obligatoires."}, status=400)
+    if User.objects.filter(email__iexact=email).exists():
+        return Response({"detail": "Cet email a déjà un compte. Connectez-vous."}, status=409)
+    if User.objects.filter(phone=phone).exists():
+        return Response({"detail": "Ce numéro est déjà utilisé."}, status=409)
+    try:
+        validate_password(password)
+    except ValidationError as exc:
+        return Response({"detail": " ".join(exc.messages)}, status=400)
 
-@api_view(["POST"])
-def courier_request_otp(request):
-    phone = (request.data.get("phone") or "").strip()
-    courier = _find_courier(phone)
-    if not courier:
-        return Response(
-            {"detail": "Numéro non reconnu. Créez un compte livreur."},
-            status=status.HTTP_404_NOT_FOUND,
+    with transaction.atomic():
+        user = User.objects.create_user(
+            email=email, password=password, full_name=name,
+            phone=phone, role=User.Role.COURIER,
         )
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    courier.otp_code = code
-    courier.otp_expires_at = timezone.now() + timedelta(minutes=OTP_TTL_MIN)
-    courier.save(update_fields=["otp_code", "otp_expires_at"])
-    # En prod : envoyer `code` par SMS/WhatsApp. En démo on le renvoie.
-    logger.info("[Courier OTP] %s → %s", courier.phone, code)
-    return Response({"sent": True, "demo_code": code, "ttl_minutes": OTP_TTL_MIN})
+        courier = Courier.objects.create(
+            user=user, name=name, phone=phone, vehicle=vehicle,
+            is_active=True, is_available=True,
+        )
+        if zone_ids:
+            courier.zones.set(DeliveryZone.objects.filter(id__in=zone_ids))
+
+    refresh = RefreshToken.for_user(user)
+    return Response(
+        {
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": UserSerializer(user).data,
+            "profile": _profile(courier),
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
-@api_view(["POST"])
-def courier_verify_otp(request):
-    phone = (request.data.get("phone") or "").strip()
-    code = (request.data.get("code") or "").strip()
-    courier = _find_courier(phone)
-    if not courier or not courier.otp_code:
-        return Response({"detail": "Demandez d'abord un code."}, status=400)
-    if not courier.otp_expires_at or timezone.now() > courier.otp_expires_at:
-        return Response({"detail": "Code expiré. Demandez-en un nouveau."}, status=400)
-    if code != courier.otp_code:
-        return Response({"detail": "Code incorrect."}, status=400)
-    courier.otp_code = ""
-    courier.otp_expires_at = None
-    courier.save(update_fields=["otp_code", "otp_expires_at"])
-    return Response({"token": make_token(courier), "courier": _profile(courier)})
-
-
-# ----------------------------- espace -----------------------------
+# ----------------------------- espace (JWT + IsCourier) -----------------------------
 
 @api_view(["GET"])
+@permission_classes([IsCourier])
 def courier_me(request):
-    courier = courier_from_request(request)
-    if not courier:
-        return Response({"detail": "Non autorisé."}, status=status.HTTP_401_UNAUTHORIZED)
+    courier = _courier_of(request)
     return Response({"profile": _profile(courier), "stats": _stats(courier)})
 
 
 @api_view(["POST"])
+@permission_classes([IsCourier])
 def courier_set_availability(request):
-    courier = courier_from_request(request)
-    if not courier:
-        return Response({"detail": "Non autorisé."}, status=status.HTTP_401_UNAUTHORIZED)
+    courier = _courier_of(request)
     courier.is_available = bool(request.data.get("is_available"))
     courier.save(update_fields=["is_available"])
     return Response({"is_available": courier.is_available})
 
 
 @api_view(["GET"])
+@permission_classes([IsCourier])
 def courier_deliveries(request):
-    courier = courier_from_request(request)
-    if not courier:
-        return Response({"detail": "Non autorisé."}, status=status.HTTP_401_UNAUTHORIZED)
+    courier = _courier_of(request)
     qs = (
         Delivery.objects.filter(courier=courier)
         .select_related("order", "zone")
@@ -224,10 +191,9 @@ def courier_deliveries(request):
 
 
 @api_view(["POST"])
+@permission_classes([IsCourier])
 def courier_accept(request, pk):
-    courier = courier_from_request(request)
-    if not courier:
-        return Response({"detail": "Non autorisé."}, status=status.HTTP_401_UNAUTHORIZED)
+    courier = _courier_of(request)
     dv = Delivery.objects.filter(pk=pk, courier=courier).first()
     if not dv:
         return Response({"detail": "Course introuvable."}, status=status.HTTP_404_NOT_FOUND)
@@ -239,14 +205,20 @@ def courier_accept(request, pk):
 
 
 @api_view(["POST"])
+@permission_classes([IsCourier])
 def courier_complete(request, pk):
-    courier = courier_from_request(request)
-    if not courier:
-        return Response({"detail": "Non autorisé."}, status=status.HTTP_401_UNAUTHORIZED)
+    courier = _courier_of(request)
     dv = Delivery.objects.filter(pk=pk, courier=courier).first()
     if not dv:
         return Response({"detail": "Course introuvable."}, status=status.HTTP_404_NOT_FOUND)
     code = (request.data.get("code") or "").strip()
     if dv.complete_with_code(code):
+        # Génère le décaissement (règlement livreur↔plateforme) — idempotent.
+        try:
+            from delivery.models import Settlement
+
+            Settlement.ensure_for_delivery(dv)
+        except Exception:  # noqa: BLE001 — ne bloque pas la validation de course
+            logger.warning("Décaissement non créé pour %s", dv.order.reference, exc_info=True)
         return Response({"status": dv.status})
     return Response({"detail": "Code de livraison invalide."}, status=status.HTTP_400_BAD_REQUEST)

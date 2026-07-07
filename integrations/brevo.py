@@ -46,7 +46,7 @@ def send_email(
     payload = {
         "sender": {
             "name": getattr(settings, "BREVO_SENDER_NAME", "Tchokos"),
-            "email": getattr(settings, "BREVO_SENDER_EMAIL", "no-reply@tchokos.cm"),
+            "email": getattr(settings, "BREVO_SENDER_EMAIL", "no-reply@tchokos-sarl.com"),
         },
         "to": [{"email": to_email, "name": to_name or to_email}],
         "subject": subject,

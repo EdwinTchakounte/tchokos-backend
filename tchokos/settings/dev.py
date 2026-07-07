@@ -11,6 +11,15 @@ ALLOWED_HOSTS = ["*"]
 
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
+# Dev : autorise toute origine (aperçu mobile via IP LAN, ex. http://10.137.226.210:3000)
+# En prod, CORS_ALLOWED_ORIGINS reste piloté par l'env dans base.py.
+CORS_ALLOW_ALL_ORIGINS = True
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://10.137.226.210:3000",
+]
+
 
 try:
     from .local import *

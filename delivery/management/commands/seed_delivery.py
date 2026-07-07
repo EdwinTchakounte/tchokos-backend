@@ -1,10 +1,15 @@
 """Seed des zones de livraison (Douala) et de quelques livreurs de démo.
 
+Chaque livreur a un compte User (email + mot de passe) pour se connecter.
 Idempotent. Usage : python manage.py seed_delivery
 """
+from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 
 from delivery.models import DeliveryZone, Courier
+
+User = get_user_model()
+DEMO_PASSWORD = "tchokos123"
 
 # (nom, frais FCFA, délai estimé min)
 ZONES = [
@@ -27,10 +32,10 @@ ZONES = [
 ]
 
 COURIERS = [
-    ("Patrick Mbarga", "237670000001", ["Akwa", "Bonanjo", "Bali", "Deïdo"]),
-    ("Yannick Etoa", "237670000002", ["Bonamoussadi", "Makèpè", "Logpom", "Logbessou"]),
-    ("Aïcha Njoya", "237670000003", ["Bonapriso", "New Bell", "Ndokotti", "Bépanda"]),
-    ("Serge Kamga", "237670000004", ["Bonabéri", "Village", "Yassa", "PK (PK8–PK14)"]),
+    ("Patrick Mbarga", "patrick@tchokos-sarl.com", "237670000001", ["Akwa", "Bonanjo", "Bali", "Deïdo"]),
+    ("Yannick Etoa", "yannick@tchokos-sarl.com", "237670000002", ["Bonamoussadi", "Makèpè", "Logpom", "Logbessou"]),
+    ("Aïcha Njoya", "aicha@tchokos-sarl.com", "237670000003", ["Bonapriso", "New Bell", "Ndokotti", "Bépanda"]),
+    ("Serge Kamga", "serge@tchokos-sarl.com", "237670000004", ["Bonabéri", "Village", "Yassa", "PK (PK8–PK14)"]),
 ]
 
 
@@ -48,13 +53,23 @@ class Command(BaseCommand):
             if created:
                 self.stdout.write(f"  + zone {name} ({fee} FCFA)")
 
-        for name, phone, zone_names in COURIERS:
-            c, created = Courier.objects.get_or_create(
-                phone=phone, defaults={"name": name}
+        for name, email, phone, zone_names in COURIERS:
+            user, u_created = User.objects.get_or_create(
+                email=email,
+                defaults={"full_name": name, "phone": phone, "role": User.Role.COURIER},
             )
+            if u_created:
+                user.set_password(DEMO_PASSWORD)
+                user.save()
+            c, created = Courier.objects.get_or_create(
+                phone=phone, defaults={"name": name, "user": user}
+            )
+            if c.user_id != user.id:
+                c.user = user
+                c.save(update_fields=["user"])
             if created:
                 c.zones.set([zone_objs[z] for z in zone_names if z in zone_objs])
-                self.stdout.write(f"  + livreur {name}")
+                self.stdout.write(f"  + livreur {name} ({email})")
 
         self.stdout.write(self.style.SUCCESS(
             f"Seed livraison OK : {DeliveryZone.objects.count()} zones, "

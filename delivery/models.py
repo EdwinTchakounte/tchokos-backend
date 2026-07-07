@@ -36,8 +36,17 @@ class DeliveryZone(models.Model):
 
 
 class Courier(models.Model):
-    """Livreur de la plateforme."""
+    """Profil livreur, rattaché à un compte utilisateur (accounts.User).
 
+    L'authentification (email+mot de passe, ou OTP téléphone) est portée par le
+    ``User`` ; ce modèle ne garde que les infos métier de livraison.
+    """
+
+    user = models.OneToOneField(
+        "accounts.User", verbose_name=_("compte"),
+        on_delete=models.CASCADE, related_name="courier_profile",
+        null=True, blank=True,
+    )
     name = models.CharField(_("nom"), max_length=150)
     phone = models.CharField(_("téléphone"), max_length=30, unique=True)
     city = models.CharField(_("ville"), max_length=80, default="Douala")
@@ -50,9 +59,6 @@ class Courier(models.Model):
     )
     is_active = models.BooleanField(_("actif"), default=True)
     is_available = models.BooleanField(_("disponible"), default=True)
-    # Authentification par OTP (code envoyé par SMS/WhatsApp en prod)
-    otp_code = models.CharField(_("code OTP"), max_length=6, blank=True)
-    otp_expires_at = models.DateTimeField(_("OTP expire le"), null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -196,3 +202,104 @@ class Delivery(models.Model):
             and self.acceptance_deadline is not None
             and timezone.now() > self.acceptance_deadline
         )
+
+
+class Settlement(models.Model):
+    """Décaissement / règlement des fonds pour une livraison terminée.
+
+    Deux cas selon le mode de paiement de la commande :
+
+    - **Paiement à la livraison (cash)** : le livreur a encaissé le total du
+      client. Il garde sa commission (frais de livraison) et **reverse les
+      articles à la plateforme** → ``direction = courier_to_platform``,
+      ``amount = total articles``.
+    - **Payé en ligne (Tara)** : le client a déjà réglé ; la **plateforme doit
+      la commission au livreur** → ``direction = platform_to_courier``,
+      ``amount = frais de livraison``.
+
+    Créé (idempotent) à la validation de la course, réglé manuellement depuis
+    le dashboard admin.
+    """
+
+    class Direction(models.TextChoices):
+        COURIER_TO_PLATFORM = "courier_to_platform", _("Livreur → plateforme")
+        PLATFORM_TO_COURIER = "platform_to_courier", _("Plateforme → livreur")
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("En attente")
+        SETTLED = "settled", _("Réglé")
+
+    delivery = models.OneToOneField(
+        Delivery, on_delete=models.CASCADE, related_name="settlement"
+    )
+    courier = models.ForeignKey(
+        Courier, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="settlements",
+    )
+    direction = models.CharField(max_length=24, choices=Direction.choices)
+    is_cod = models.BooleanField(
+        _("paiement à la livraison"), default=True,
+        help_text=_("True = cash encaissé par le livreur ; False = payé en ligne."),
+    )
+    collected = models.DecimalField(
+        _("encaissé par le livreur (FCFA)"), max_digits=12, decimal_places=0, default=0
+    )
+    courier_fee = models.DecimalField(
+        _("commission livreur (FCFA)"), max_digits=10, decimal_places=0, default=0
+    )
+    amount = models.DecimalField(
+        _("montant à régler (FCFA)"), max_digits=12, decimal_places=0, default=0
+    )
+    status = models.CharField(
+        _("statut"), max_length=10, choices=Status.choices, default=Status.PENDING,
+        db_index=True,
+    )
+    settled_at = models.DateTimeField(_("réglé le"), null=True, blank=True)
+    note = models.CharField(_("note"), max_length=255, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("décaissement")
+        verbose_name_plural = _("décaissements")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Décaissement {self.delivery.order.reference} · {self.amount} FCFA [{self.status}]"
+
+    @classmethod
+    def ensure_for_delivery(cls, delivery: "Delivery") -> "Settlement":
+        """Crée le décaissement de la livraison s'il n'existe pas (idempotent)."""
+        existing = cls.objects.filter(delivery=delivery).first()
+        if existing:
+            return existing
+        order = delivery.order
+        fee = order.delivery_fee or 0
+        paid_online = order.payments.filter(statut="valide").exists()
+        if paid_online:
+            direction = cls.Direction.PLATFORM_TO_COURIER
+            collected = 0
+            amount = fee
+            is_cod = False
+        else:
+            direction = cls.Direction.COURIER_TO_PLATFORM
+            collected = order.grand_total
+            amount = order.total
+            is_cod = True
+        return cls.objects.create(
+            delivery=delivery,
+            courier=delivery.courier,
+            direction=direction,
+            is_cod=is_cod,
+            collected=collected,
+            courier_fee=fee,
+            amount=amount,
+        )
+
+    def mark_settled(self, note: str = "") -> None:
+        self.status = self.Status.SETTLED
+        self.settled_at = timezone.now()
+        if note:
+            self.note = note[:255]
+        self.save(update_fields=["status", "settled_at", "note", "updated_at"])

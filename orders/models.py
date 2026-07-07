@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -26,6 +27,16 @@ class Order(models.Model):
         CANCELLED = "cancelled", _("Annulée")
 
     reference = models.CharField(_("référence"), max_length=20, unique=True)
+    # Client connecté à l'origine de la commande (facultatif : une commande peut
+    # être passée par un visiteur anonyme via WhatsApp). Permet « Mes commandes ».
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="orders",
+        verbose_name=_("client"),
+    )
     customer_name = models.CharField(_("nom du client"), max_length=150)
     phone = models.CharField(_("téléphone"), max_length=30)
     city = models.CharField(_("ville"), max_length=120, blank=True)
@@ -50,6 +61,11 @@ class Order(models.Model):
         _("référence paiement"), max_length=120, blank=True
     )
     payment_link = models.URLField(_("lien de paiement"), blank=True)
+
+    # Suivi de livraison via Sendo (plateforme externe)
+    sendo_shipment_id = models.CharField(_("Sendo shipment id"), max_length=40, blank=True)
+    sendo_tracking_token = models.CharField(_("jeton de suivi Sendo"), max_length=40, blank=True)
+    sendo_status = models.CharField(_("statut livraison Sendo"), max_length=20, blank=True)
 
     created_at = models.DateTimeField(_("créée le"), auto_now_add=True)
     updated_at = models.DateTimeField(_("modifiée le"), auto_now=True)
