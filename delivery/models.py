@@ -25,6 +25,10 @@ class DeliveryZone(models.Model):
     )
     is_active = models.BooleanField(_("active"), default=True)
     order = models.PositiveIntegerField(_("ordre"), default=0)
+    # Coordonnées géographiques (pour le calcul de distance / recommandation).
+    # Saisies à la main ou géocodées (Google) — voir integrations/geocoding.
+    latitude = models.FloatField(_("latitude"), null=True, blank=True)
+    longitude = models.FloatField(_("longitude"), null=True, blank=True)
 
     class Meta:
         verbose_name = _("zone de livraison")
@@ -59,6 +63,9 @@ class Courier(models.Model):
     )
     is_active = models.BooleanField(_("actif"), default=True)
     is_available = models.BooleanField(_("disponible"), default=True)
+    # Position de base du livreur (pour l'assignation « le plus proche »).
+    latitude = models.FloatField(_("latitude"), null=True, blank=True)
+    longitude = models.FloatField(_("longitude"), null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -152,11 +159,14 @@ class Delivery(models.Model):
                 return code
 
     def assign(self, courier: Courier):
-        """Assigne la course à un livreur et démarre la fenêtre de 4h."""
+        """Assigne la course à un livreur et démarre la fenêtre d'acceptation."""
+        from .geo import get_delivery_settings
+
+        hours = get_delivery_settings().acceptance_window_hours or ACCEPT_WINDOW_HOURS
         now = timezone.now()
         self.courier = courier
         self.assigned_at = now
-        self.acceptance_deadline = now + timedelta(hours=ACCEPT_WINDOW_HOURS)
+        self.acceptance_deadline = now + timedelta(hours=hours)
         self.status = self.Status.ASSIGNED
         self.flagged_for_review = False
         self.save()
@@ -274,18 +284,26 @@ class Settlement(models.Model):
         existing = cls.objects.filter(delivery=delivery).first()
         if existing:
             return existing
+        from .geo import get_delivery_settings
+
         order = delivery.order
-        fee = order.delivery_fee or 0
+        s = get_delivery_settings()
+        grand = order.grand_total
+        # Commission du livreur : frais de livraison (défaut) ou % du sous-total.
+        if s.commission_mode == "percentage":
+            commission = int(order.total * (s.commission_percent or 0) / 100)
+        else:
+            commission = int(order.delivery_fee or 0)
         paid_online = order.payments.filter(statut="valide").exists()
         if paid_online:
             direction = cls.Direction.PLATFORM_TO_COURIER
             collected = 0
-            amount = fee
+            amount = commission          # la plateforme doit la commission au livreur
             is_cod = False
         else:
             direction = cls.Direction.COURIER_TO_PLATFORM
-            collected = order.grand_total
-            amount = order.total
+            collected = grand
+            amount = grand - commission  # le livreur reverse tout sauf sa commission
             is_cod = True
         return cls.objects.create(
             delivery=delivery,
@@ -293,7 +311,7 @@ class Settlement(models.Model):
             direction=direction,
             is_cod=is_cod,
             collected=collected,
-            courier_fee=fee,
+            courier_fee=commission,
             amount=amount,
         )
 

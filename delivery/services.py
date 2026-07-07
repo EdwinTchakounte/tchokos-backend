@@ -17,17 +17,18 @@ def create_delivery_for_order(order, zone):
     Idempotent : ne fait rien si une livraison existe déjà pour la commande.
     Retourne la Delivery créée, ou celle existante, ou None.
     """
-    from .models import Courier, Delivery
+    from .geo import get_delivery_settings, recommend_courier
+    from .models import Delivery
 
     existing = Delivery.objects.filter(order=order).first()
     if existing:
         return existing
 
     delivery = Delivery.objects.create(order=order, zone=zone)
-    if zone:
-        courier = (
-            Courier.objects.filter(is_active=True, is_available=True, zones=zone).first()
-        )
+    # Assignation auto (si activée par l'admin) selon la stratégie configurée
+    # (premier dispo / le plus proche). Sinon la course reste « À assigner ».
+    if zone and get_delivery_settings().auto_assign:
+        courier = recommend_courier(zone)
         if courier:
             delivery.assign(courier)
     return delivery

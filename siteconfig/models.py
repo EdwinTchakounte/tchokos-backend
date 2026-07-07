@@ -78,3 +78,79 @@ class BrandSettings(BaseGenericSetting):
 
     class Meta:
         verbose_name = "Marque & contact"
+
+
+@register_setting
+class DeliverySettings(BaseGenericSetting):
+    """Réglages de livraison, éditables par l'admin (Wagtail → Paramètres → Livraison).
+
+    Pilote entièrement le comportement du module de livraison : mode
+    interne/externe, assignation, délais, commission, notifications.
+    """
+
+    class Mode(models.TextChoices):
+        INTERNE = "internal", "Interne (livreurs Tchokos)"
+        EXTERNE = "external", "Externe (prestataire)"
+        MIXTE = "both", "Les deux (interne + externe)"
+
+    class AssignStrategy(models.TextChoices):
+        FIRST = "first_available", "Premier livreur disponible"
+        NEAREST = "nearest", "Livreur le plus proche (distance)"
+
+    class CommissionMode(models.TextChoices):
+        FIXED = "fixed_fee", "Frais de livraison (le livreur garde les frais)"
+        PERCENT = "percentage", "Pourcentage du sous-total"
+
+    delivery_mode = models.CharField(
+        "Mode de livraison", max_length=12, choices=Mode.choices, default=Mode.INTERNE,
+    )
+    auto_assign = models.BooleanField(
+        "Assignation automatique", default=True,
+        help_text="Assigner automatiquement chaque commande à un livreur. Sinon l'admin assigne à la main.",
+    )
+    assign_strategy = models.CharField(
+        "Stratégie d'assignation", max_length=20,
+        choices=AssignStrategy.choices, default=AssignStrategy.FIRST,
+        help_text="« Le plus proche » nécessite les coordonnées des zones et des livreurs.",
+    )
+    acceptance_window_hours = models.PositiveIntegerField(
+        "Délai d'acceptation (heures)", default=4,
+        help_text="Temps laissé au livreur pour accepter avant expiration.",
+    )
+    commission_mode = models.CharField(
+        "Mode de commission", max_length=12,
+        choices=CommissionMode.choices, default=CommissionMode.FIXED,
+    )
+    commission_percent = models.DecimalField(
+        "Commission (%)", max_digits=5, decimal_places=2, default=0,
+        help_text="Utilisé si mode = pourcentage. Ex: 10 = 10% du sous-total.",
+    )
+    notify_courier = models.BooleanField(
+        "Notifier le livreur d'une nouvelle course", default=True,
+    )
+
+    panels = [
+        MultiFieldPanel(
+            [FieldPanel("delivery_mode")],
+            heading="Mode",
+        ),
+        MultiFieldPanel(
+            [
+                FieldPanel("auto_assign"),
+                FieldPanel("assign_strategy"),
+                FieldPanel("acceptance_window_hours"),
+            ],
+            heading="Assignation",
+        ),
+        MultiFieldPanel(
+            [FieldPanel("commission_mode"), FieldPanel("commission_percent")],
+            heading="Commission",
+        ),
+        MultiFieldPanel(
+            [FieldPanel("notify_courier")],
+            heading="Notifications",
+        ),
+    ]
+
+    class Meta:
+        verbose_name = "Livraison"
