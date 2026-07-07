@@ -54,7 +54,9 @@ def _serialize_delivery(dv: Delivery):
         "id": dv.id,
         "status": dv.status,
         "status_display": dv.get_status_display(),
-        "code": dv.delivery_code if dv.status == Delivery.Status.ACCEPTED else "",
+        # Le code n'est JAMAIS exposé au livreur : il est envoyé au client, qui
+        # le communique au livreur à la réception. On indique juste s'il est parti.
+        "code_sent": bool(dv.delivery_code) and dv.status == Delivery.Status.ACCEPTED,
         "acceptance_deadline": dv.acceptance_deadline.isoformat() if dv.acceptance_deadline else None,
         "remaining_seconds": remaining,
         "is_overdue": dv.is_overdue,
@@ -198,10 +200,14 @@ def courier_accept(request, pk):
     if not dv:
         return Response({"detail": "Course introuvable."}, status=status.HTTP_404_NOT_FOUND)
     try:
-        code = dv.accept()
+        dv.accept()
     except ValueError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-    return Response({"code": code, "status": dv.status})
+    # Le code part au CLIENT (email; WhatsApp si configuré) — jamais au livreur.
+    from delivery.notifications import send_delivery_code
+
+    notified = send_delivery_code(dv)
+    return Response({"status": dv.status, "notified": notified})
 
 
 @api_view(["POST"])

@@ -35,6 +35,16 @@ class BrandSettings(BaseGenericSetting):
     facebook_url = models.URLField("Facebook", blank=True)
     instagram_url = models.URLField("Instagram", blank=True)
 
+    # Notifications client (code de livraison, etc.) — pilotables par l'admin.
+    notify_client_email = models.BooleanField(
+        "Notifier les clients par email", default=True,
+        help_text="Envoi du code de livraison et notifications au client par email (Brevo).",
+    )
+    notify_client_whatsapp = models.BooleanField(
+        "Notifier les clients par WhatsApp", default=False,
+        help_text="Nécessite un fournisseur d'API WhatsApp Business (à configurer). Sans effet tant que non branché.",
+    )
+
     panels = [
         MultiFieldPanel(
             [FieldPanel("site_name"), FieldPanel("tagline")],
@@ -56,6 +66,13 @@ class BrandSettings(BaseGenericSetting):
                 FieldPanel("instagram_url"),
             ],
             heading="Réseaux sociaux",
+        ),
+        MultiFieldPanel(
+            [
+                FieldPanel("notify_client_email"),
+                FieldPanel("notify_client_whatsapp"),
+            ],
+            heading="Notifications client",
         ),
     ]
 
