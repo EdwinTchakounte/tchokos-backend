@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Sérialise les déploiements d'un même dépôt (évite deux `up -d` concurrents).
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   IMAGE: ghcr.io/${{ github.repository }}   # -> ghcr.io/<owner>/tchokos-backend
 
@@ -57,4 +62,6 @@ jobs:
             cd ${{ vars.DEPLOY_PATH }}
             docker compose -f docker-compose.prod.yml pull tchokos_api
             docker compose -f docker-compose.prod.yml up -d tchokos_api
-            docker image prune -f
+            # `|| true` : un prune concurrent (autre dépôt) ne doit pas faire
+            # échouer un déploiement pourtant réussi.
+            docker image prune -f || true
