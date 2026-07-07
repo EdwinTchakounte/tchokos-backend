@@ -29,6 +29,35 @@ def build_set_password_link(user) -> str:
     return f"{base}/mot-de-passe-oublie/confirmer?uid={uid}&token={token}"
 
 
+def send_password_reset(user) -> None:
+    """Email de réinitialisation de mot de passe (même canal Brevo que le reste).
+
+    Remplace l'ancien envoi via ``send_mail`` (SMTP non configuré en prod).
+    """
+    link = build_set_password_link(user)
+    try:
+        brevo.send_email(
+            to_email=user.email,
+            to_name=user.full_name or user.email,
+            subject="Réinitialisation de votre mot de passe Tchokos",
+            html_content=(
+                "<h2>Réinitialisation du mot de passe</h2>"
+                "<p>Vous avez demandé à réinitialiser votre mot de passe. "
+                "Cliquez ci-dessous pour en définir un nouveau :</p>"
+                f'<p><a href="{link}" '
+                'style="display:inline-block;padding:12px 20px;background:#0f9d58;'
+                'color:#fff;border-radius:8px;text-decoration:none">'
+                "Réinitialiser mon mot de passe</a></p>"
+                f'<p style="font-size:12px;color:#666">Ou copiez ce lien :<br>{link}</p>'
+                "<p style=\"font-size:12px;color:#666\">Si vous n'êtes pas à "
+                "l'origine de cette demande, ignorez cet email.</p>"
+                "<p>— L'équipe Tchokos</p>"
+            ),
+        )
+    except brevo.BrevoError:
+        logger.exception("Échec envoi email reset mot de passe %s", user.email)
+
+
 def send_account_invite(user) -> None:
     """Envoie l'email de bienvenue avec le lien pour définir le mot de passe."""
     link = build_set_password_link(user)

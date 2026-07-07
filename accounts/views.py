@@ -17,9 +17,8 @@ import logging
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
-from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -111,25 +110,12 @@ def password_reset_request(request):
     serializer.is_valid(raise_exception=True)
     email = serializer.validated_data["email"]
     user = User.objects.filter(email__iexact=email, is_active=True).first()
-    # Réponse identique que l'email existe ou non (anti-énumération)
+    # Réponse identique que l'email existe ou non (anti-énumération).
+    # Envoi via Brevo (canal unifié) — send_password_reset ne lève jamais.
     if user:
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        token = default_token_generator.make_token(user)
-        link = f"{settings.FRONTEND_URL}/mot-de-passe-oublie/confirmer?uid={uid}&token={token}"
-        try:
-            send_mail(
-                subject="Réinitialisation de votre mot de passe Tchokos",
-                message=(
-                    f"Bonjour,\n\nPour réinitialiser votre mot de passe, "
-                    f"cliquez sur ce lien :\n{link}\n\n"
-                    f"Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.\n\n— Tchokos"
-                ),
-                from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-                recipient_list=[user.email],
-                fail_silently=True,
-            )
-        except Exception as exc:
-            logger.error("[reset] envoi email échoué: %s", exc)
+        from .emails import send_password_reset
+
+        send_password_reset(user)
     return Response({"detail": "Si un compte existe pour cet email, un lien a été envoyé."})
 
 
