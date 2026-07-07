@@ -46,6 +46,7 @@ urlpatterns = [
     path("admin/orders/<int:pk>/contact/", admin_orders_views.admin_order_contact, name="admin-order-contact"),
     path("admin/payments/", admin_orders_views.admin_payments, name="admin-payments"),
     path("admin/sales-stats/", admin_orders_views.admin_sales_stats, name="admin-sales-stats"),
+    path("admin/overview/", admin_orders_views.admin_overview, name="admin-overview"),
     # Back-office livraisons / zones / décaissements
     path("admin/deliveries/", admin_delivery_views.admin_deliveries, name="admin-deliveries"),
     path("admin/deliveries/<int:pk>/assign/", admin_delivery_views.admin_delivery_assign, name="admin-delivery-assign"),

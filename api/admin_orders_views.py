@@ -8,12 +8,17 @@ from __future__ import annotations
 import logging
 from urllib.parse import quote
 
+from datetime import timedelta
+
 from django.db.models import Count, Q, Sum
+from django.db.models.functions import TruncDate
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from accounts.permissions import IsAdminRole
+from delivery.models import Delivery
 from integrations import brevo
 from orders.models import Order, OrderItem
 from payments.models import Payment
@@ -304,3 +309,71 @@ def admin_sales_stats(request):
             "payments_en_attente": Payment.objects.filter(statut=Payment.Statut.EN_ATTENTE).count(),
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([IsAdminRole])
+def admin_overview(request):
+    """Vue d'ensemble : KPIs + répartition par statut + séries 30 jours + livraison.
+
+    Une seule requête pour alimenter le tableau de bord. Toutes les valeurs
+    monétaires sont des entiers XAF sérialisés en chaîne.
+    """
+    now = timezone.now()
+    start = (now - timedelta(days=29)).date()  # fenêtre de 30 jours (aujourd'hui inclus)
+
+    orders = Order.objects.all()
+    by_status = {
+        row["status"]: row["n"]
+        for row in orders.values("status").annotate(n=Count("id"))
+    }
+
+    valid_payments = Payment.objects.filter(statut=Payment.Statut.VALIDE)
+    revenue = valid_payments.aggregate(s=Sum("montant"))["s"] or 0
+    n_valid = valid_payments.count()
+    avg_basket = int(revenue / max(n_valid, 1))
+
+    # Séries journalières (30 j), trous comblés à 0.
+    orders_by_day = {
+        r["d"]: r["n"]
+        for r in orders.filter(created_at__date__gte=start)
+        .annotate(d=TruncDate("created_at")).values("d").annotate(n=Count("id"))
+    }
+    rev_by_day = {
+        r["d"]: int(r["s"] or 0)
+        for r in valid_payments.filter(date_validation__date__gte=start)
+        .annotate(d=TruncDate("date_validation")).values("d").annotate(s=Sum("montant"))
+    }
+    series = []
+    for i in range(30):
+        day = start + timedelta(days=i)
+        series.append({
+            "date": day.isoformat(),
+            "orders": orders_by_day.get(day, 0),
+            "revenue": rev_by_day.get(day, 0),
+        })
+
+    deliveries = Delivery.objects.all()
+    delivery_kpis = {
+        "pending": deliveries.filter(status=Delivery.Status.PENDING).count(),
+        "assigned": deliveries.filter(status=Delivery.Status.ASSIGNED).count(),
+        "in_progress": deliveries.filter(status=Delivery.Status.ACCEPTED).count(),
+        "completed": deliveries.filter(status=Delivery.Status.COMPLETED).count(),
+        "expired": deliveries.filter(status=Delivery.Status.EXPIRED).count(),
+    }
+
+    return Response({
+        "kpis": {
+            "revenue_collected": str(int(revenue)),
+            "total_orders": orders.count(),
+            "paid_orders": orders.filter(status=Order.Status.PAID).count(),
+            "delivered_orders": orders.filter(status=Order.Status.DELIVERED).count(),
+            "avg_basket": str(avg_basket),
+            "payments_valides": n_valid,
+            "payments_en_attente": Payment.objects.filter(statut=Payment.Statut.EN_ATTENTE).count(),
+        },
+        "orders_by_status": by_status,
+        "status_labels": {s.value: str(s.label) for s in Order.Status},
+        "timeseries": series,
+        "delivery": delivery_kpis,
+    })
