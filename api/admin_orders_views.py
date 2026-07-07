@@ -173,13 +173,26 @@ def admin_order_detail(request, pk):
         for it in order.items.all()
     ]
     payments = [_payment_dict(p) for p in order.payments.all().order_by("-created_at")]
+    dv = (
+        Delivery.objects.select_related("courier", "zone")
+        .filter(order=order).order_by("-id").first()
+    )
+    delivery_info = None
+    if dv:
+        delivery_info = {
+            "status": dv.status,
+            "status_display": dv.get_status_display(),
+            "zone": dv.zone.name if dv.zone_id else "",
+            "courier": dv.courier.name if dv.courier_id else "",
+            "code_sent": bool(dv.delivery_code) and dv.status == Delivery.Status.ACCEPTED,
+        }
     return Response(
         {
             "id": order.id,
             "reference": order.reference,
             "customer_name": order.customer_name,
             "phone": order.phone,
-            "email": order.user.email if order.user_id else "",
+            "email": order.email or (order.user.email if order.user_id else ""),
             "city": order.city,
             "address": order.address,
             "note": order.note,
@@ -199,6 +212,7 @@ def admin_order_detail(request, pk):
             "whatsapp_link": _customer_whatsapp_link(order),
             "tracking_token": order.sendo_tracking_token,
             "sendo_status": order.sendo_status,
+            "delivery": delivery_info,
         }
     )
 
@@ -214,7 +228,7 @@ def admin_order_contact(request, pk):
     order = Order.objects.filter(pk=pk).first()
     if not order:
         return Response({"detail": "Commande introuvable."}, status=status.HTTP_404_NOT_FOUND)
-    email = order.user.email if order.user_id else ""
+    email = order.email or (order.user.email if order.user_id else "")
     if not email:
         return Response(
             {
