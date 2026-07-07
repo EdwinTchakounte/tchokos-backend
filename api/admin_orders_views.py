@@ -319,8 +319,14 @@ def admin_overview(request):
     Une seule requête pour alimenter le tableau de bord. Toutes les valeurs
     monétaires sont des entiers XAF sérialisés en chaîne.
     """
+    try:
+        days = int(request.query_params.get("days", 30))
+    except (TypeError, ValueError):
+        days = 30
+    if days not in (7, 30, 90):
+        days = 30
     now = timezone.now()
-    start = (now - timedelta(days=29)).date()  # fenêtre de 30 jours (aujourd'hui inclus)
+    start = (now - timedelta(days=days - 1)).date()  # fenêtre glissante (aujourd'hui inclus)
 
     orders = Order.objects.all()
     by_status = {
@@ -345,7 +351,7 @@ def admin_overview(request):
         .annotate(d=TruncDate("date_validation")).values("d").annotate(s=Sum("montant"))
     }
     series = []
-    for i in range(30):
+    for i in range(days):
         day = start + timedelta(days=i)
         series.append({
             "date": day.isoformat(),
@@ -372,6 +378,7 @@ def admin_overview(request):
             "payments_valides": n_valid,
             "payments_en_attente": Payment.objects.filter(statut=Payment.Statut.EN_ATTENTE).count(),
         },
+        "days": days,
         "orders_by_status": by_status,
         "status_labels": {s.value: str(s.label) for s in Order.Status},
         "timeseries": series,
