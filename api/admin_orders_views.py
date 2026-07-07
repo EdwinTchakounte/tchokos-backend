@@ -8,10 +8,10 @@ from __future__ import annotations
 import logging
 from urllib.parse import quote
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.db.models import Count, Q, Sum
-from django.db.models.functions import TruncDate
+from django.db.models.functions import TruncDate, TruncMonth
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -323,10 +323,9 @@ def admin_overview(request):
         days = int(request.query_params.get("days", 30))
     except (TypeError, ValueError):
         days = 30
-    if days not in (7, 30, 90):
+    if days not in (7, 30, 90, 365):
         days = 30
     now = timezone.now()
-    start = (now - timedelta(days=days - 1)).date()  # fenêtre glissante (aujourd'hui inclus)
 
     orders = Order.objects.all()
     by_status = {
@@ -340,24 +339,55 @@ def admin_overview(request):
     avg_basket = int(revenue / max(n_valid, 1))
 
     # Séries journalières (30 j), trous comblés à 0.
-    orders_by_day = {
-        r["d"]: r["n"]
-        for r in orders.filter(created_at__date__gte=start)
-        .annotate(d=TruncDate("created_at")).values("d").annotate(n=Count("id"))
-    }
-    rev_by_day = {
-        r["d"]: int(r["s"] or 0)
-        for r in valid_payments.filter(date_validation__date__gte=start)
-        .annotate(d=TruncDate("date_validation")).values("d").annotate(s=Sum("montant"))
-    }
-    series = []
-    for i in range(days):
-        day = start + timedelta(days=i)
-        series.append({
-            "date": day.isoformat(),
-            "orders": orders_by_day.get(day, 0),
-            "revenue": rev_by_day.get(day, 0),
-        })
+    # Séries temporelles : quotidien (≤ 90 j) ou mensuel (12 mois) pour rester lisible.
+    if days >= 365:
+        granularity = "month"
+        base = now.year * 12 + (now.month - 1) - 11  # 12 mois glissants, mois courant inclus
+        buckets = [date((base + k) // 12, (base + k) % 12 + 1, 1) for k in range(12)]
+        start = buckets[0]
+        o_by = {}
+        for r in (
+            orders.filter(created_at__date__gte=start)
+            .annotate(d=TruncMonth("created_at")).values("d").annotate(n=Count("id"))
+        ):
+            d = r["d"]
+            o_by[(d.year, d.month)] = r["n"]
+        r_by = {}
+        for r in (
+            valid_payments.filter(date_validation__date__gte=start)
+            .annotate(d=TruncMonth("date_validation")).values("d").annotate(s=Sum("montant"))
+        ):
+            d = r["d"]
+            r_by[(d.year, d.month)] = int(r["s"] or 0)
+        series = [
+            {
+                "date": b.isoformat(),
+                "orders": o_by.get((b.year, b.month), 0),
+                "revenue": r_by.get((b.year, b.month), 0),
+            }
+            for b in buckets
+        ]
+    else:
+        granularity = "day"
+        start = (now - timedelta(days=days - 1)).date()  # fenêtre glissante (aujourd'hui inclus)
+        orders_by_day = {
+            r["d"]: r["n"]
+            for r in orders.filter(created_at__date__gte=start)
+            .annotate(d=TruncDate("created_at")).values("d").annotate(n=Count("id"))
+        }
+        rev_by_day = {
+            r["d"]: int(r["s"] or 0)
+            for r in valid_payments.filter(date_validation__date__gte=start)
+            .annotate(d=TruncDate("date_validation")).values("d").annotate(s=Sum("montant"))
+        }
+        series = [
+            {
+                "date": (start + timedelta(days=i)).isoformat(),
+                "orders": orders_by_day.get(start + timedelta(days=i), 0),
+                "revenue": rev_by_day.get(start + timedelta(days=i), 0),
+            }
+            for i in range(days)
+        ]
 
     deliveries = Delivery.objects.all()
     delivery_kpis = {
@@ -379,6 +409,7 @@ def admin_overview(request):
             "payments_en_attente": Payment.objects.filter(statut=Payment.Statut.EN_ATTENTE).count(),
         },
         "days": days,
+        "granularity": granularity,
         "orders_by_status": by_status,
         "status_labels": {s.value: str(s.label) for s in Order.Status},
         "timeseries": series,
