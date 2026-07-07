@@ -239,6 +239,7 @@ def create_order(request):
             note=data.get("note", ""),
             channel=Order.Channel.TARA if pay_online else Order.Channel.WHATSAPP,
             delivery_fee=zone.fee if zone else 0,
+            delivery_zone=zone,
         )
         lines = []
         for it in data["items"]:
@@ -261,18 +262,14 @@ def create_order(request):
         order.recompute_total()
         order.save(update_fields=["total"])
 
-        # Livraison interne — uniquement si la commande est à livrer.
-        if with_delivery:
-            # Crée la livraison et l'assigne automatiquement à un livreur de la
-            # zone (démarre la fenêtre de 4h). Sinon elle reste « À assigner ».
-            delivery = Delivery.objects.create(order=order, zone=zone)
-            if zone:
-                courier = (
-                    Courier.objects.filter(is_active=True, is_available=True, zones=zone)
-                    .first()
-                )
-                if courier:
-                    delivery.assign(courier)
+        # Livraison interne. Pour une commande payée EN LIGNE, on NE crée PAS la
+        # livraison ici : elle sera créée au webhook, une fois le paiement
+        # confirmé (cf. payments.services._hook_order_paid). Pour une commande
+        # sans paiement en ligne (WhatsApp/COD), on la crée tout de suite.
+        if with_delivery and not pay_online:
+            from delivery.services import create_delivery_for_order
+
+            create_delivery_for_order(order, zone)
 
     settings_obj = BrandSettings.load(request_or_site=request)
 
@@ -316,10 +313,10 @@ def create_order(request):
         # Compte client automatique (dès paiement en ligne) + email d'activation.
         _maybe_create_customer_account(order, data, request)
 
-    # Pousse la livraison vers Sendo (suivi externe) — uniquement si livraison,
-    # et best-effort.
+    # Pousse la livraison vers Sendo (suivi externe) — uniquement si livraison
+    # ET pas en attente de paiement en ligne (best-effort).
     tracking_url = ""
-    if with_delivery:
+    if with_delivery and not pay_online:
         shipment = sendo.create_shipment(order)
         if shipment:
             order.sendo_shipment_id = shipment.get("id", "")

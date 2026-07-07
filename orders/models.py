@@ -56,6 +56,15 @@ class Order(models.Model):
     delivery_fee = models.DecimalField(
         _("frais de livraison (FCFA)"), max_digits=10, decimal_places=0, default=0
     )
+    # Zone visée (mémorisée pour créer la livraison APRÈS paiement confirmé,
+    # pour les commandes payées en ligne). Null pour un retrait.
+    delivery_zone = models.ForeignKey(
+        "delivery.DeliveryZone",
+        verbose_name=_("zone de livraison"),
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="orders",
+    )
 
     # Hook paiement (rempli quand Tara Money est utilisé)
     payment_reference = models.CharField(

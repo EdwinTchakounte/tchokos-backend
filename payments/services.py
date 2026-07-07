@@ -230,13 +230,30 @@ def _hook_order_paid(payment: Payment, _raw: dict) -> None:
     from orders.models import Order
 
     order = payment.order
-    if order.status == Order.Status.PAID:
-        return  # déjà traité (rejeu webhook)
-
-    # Ne pas rétrograder une commande déjà livrée.
-    if order.status != Order.Status.DELIVERED:
+    # Passe la commande à PAID (sans rétrograder une commande déjà livrée).
+    if order.status not in (Order.Status.PAID, Order.Status.DELIVERED):
         order.status = Order.Status.PAID
         order.save(update_fields=["status", "updated_at"])
+
+    # Crée la livraison MAINTENANT (paiement confirmé) pour les commandes payées
+    # en ligne avec une zone — idempotent, ne lève jamais.
+    _ensure_delivery_after_payment(order)
+
+
+def _ensure_delivery_after_payment(order) -> None:
+    """Crée/assigne la livraison après paiement confirmé (commande en ligne).
+
+    Best-effort et idempotent : ne fait rien si pas de zone ou si une livraison
+    existe déjà. Une erreur ici ne doit jamais casser le webhook.
+    """
+    if not getattr(order, "delivery_zone_id", None):
+        return
+    try:
+        from delivery.services import create_delivery_for_order
+
+        create_delivery_for_order(order, order.delivery_zone)
+    except Exception:  # noqa: BLE001 — best-effort
+        logger.exception("Création livraison post-paiement échouée (%s)", order.reference)
 
     logger.info(
         "[PAYMENTS] commande %s marquée PAYÉE (payment #%s, %s FCFA)",
