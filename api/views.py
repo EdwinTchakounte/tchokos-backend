@@ -211,8 +211,13 @@ def create_order(request):
     serializer.is_valid(raise_exception=True)
     data = serializer.validated_data
 
-    # Paiement Tara direct, sans expédition (retrait/pas de livraison)
+    # Livraison à domicile (zone) vs retrait — indépendant du moyen de paiement.
     with_delivery = data.get("with_delivery", True)
+    # Paiement en ligne (Tara) maintenant. Rétro-compat : si le champ n'est pas
+    # envoyé (ancien front), on garde l'ancien lien « pas de livraison = payer ».
+    pay_online = data.get("pay_online")
+    if pay_online is None:
+        pay_online = not with_delivery
 
     product_ids = [it["product_id"] for it in data["items"]]
     products = {p.id: p for p in Product.objects.filter(id__in=product_ids)}
@@ -232,7 +237,7 @@ def create_order(request):
             city=data.get("city", "") or (zone.name if zone else ""),
             address=data.get("address", ""),
             note=data.get("note", ""),
-            channel=Order.Channel.TARA if not with_delivery else Order.Channel.WHATSAPP,
+            channel=Order.Channel.TARA if pay_online else Order.Channel.WHATSAPP,
             delivery_fee=zone.fee if zone else 0,
         )
         lines = []
@@ -290,14 +295,13 @@ def create_order(request):
     wa_number = settings_obj.whatsapp_number or ""
     wa_link = f"https://wa.me/{wa_number}?text={quote(msg)}" if wa_number else ""
 
-    # Paiement Tara Mobile Money — uniquement sur le canal Tara (sans livraison,
-    # « Payer maintenant »). Crée un Payment tracé + pousse le STK Push. En dev
-    # sans clés Tara, le provider tourne en mode mock (paiement en_attente,
-    # confirmable via l'endpoint dev). Les commandes WhatsApp ne paient pas ici.
+    # Paiement Tara Mobile Money — dès que `pay_online` (avec OU sans livraison).
+    # Le montant poussé (order.grand_total) inclut les frais de livraison le cas
+    # échéant. En dev sans clés Tara, le provider tourne en mode mock.
     payment_status = None
     payment_url = ""
     payment_is_stub = False
-    if not with_delivery:
+    if pay_online:
         from payments.services import start_order_payment
         from payments.providers.tara import TaraProvider
 
@@ -309,7 +313,7 @@ def create_order(request):
             order.payment_link = payment_url
         order.save(update_fields=["payment_link", "payment_reference"])
 
-        # Compte client automatique (canal Tara uniquement) + email d'activation.
+        # Compte client automatique (dès paiement en ligne) + email d'activation.
         _maybe_create_customer_account(order, data, request)
 
     # Pousse la livraison vers Sendo (suivi externe) — uniquement si livraison,

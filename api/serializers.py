@@ -129,9 +129,12 @@ class OrderCreateSerializer(serializers.Serializer):
     note = serializers.CharField(required=False, allow_blank=True)
     zone_id = serializers.IntegerField(required=False, allow_null=True)
     items = OrderItemInputSerializer(many=True)
-    # False = paiement direct Tara SANS livraison (retrait / pas d'expédition) :
-    # on ne crée alors ni livraison interne ni colis Sendo.
+    # with_delivery = livraison à domicile (zone) vs retrait.
     with_delivery = serializers.BooleanField(required=False, default=True)
+    # pay_online = payer en ligne (Tara) maintenant. Découplé de la livraison :
+    # on peut désormais avoir livraison ET paiement en ligne. Si absent, on
+    # retombe sur l'ancien comportement (pay_online = pas de livraison).
+    pay_online = serializers.BooleanField(required=False)
 
     def validate_items(self, value):
         if not value:
