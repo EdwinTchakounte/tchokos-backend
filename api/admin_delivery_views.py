@@ -27,6 +27,16 @@ def _int_or_400(value, field):
         return None, Response({"detail": f"{field} invalide."}, status=status.HTTP_400_BAD_REQUEST)
 
 
+def _float_or_none(value):
+    """Convertit une coordonnée en float, ou None si vide/invalide."""
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Livraisons
 # ---------------------------------------------------------------------------
@@ -71,23 +81,116 @@ def admin_deliveries(request):
     return Response({"count": len(rows), "results": [_delivery_dict(d) for d in rows]})
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @permission_classes([IsAdminRole])
 def admin_couriers(request):
-    couriers = Courier.objects.prefetch_related("zones").all()
-    return Response(
-        [
-            {
-                "id": c.id,
-                "name": c.name,
-                "phone": c.phone,
-                "is_active": c.is_active,
-                "is_available": c.is_available,
-                "zones": [z.name for z in c.zones.all()],
-            }
-            for c in couriers
-        ]
+    if request.method == "POST":
+        return _create_courier(request)
+    couriers = Courier.objects.prefetch_related("zones").select_related("user").all()
+    return Response([_courier_dict(c) for c in couriers])
+
+
+def _courier_dict(c: Courier) -> dict:
+    return {
+        "id": c.id,
+        "name": c.name,
+        "phone": c.phone,
+        "email": c.user.email if c.user_id else "",
+        "city": c.city,
+        "vehicle": c.vehicle,
+        "is_active": c.is_active,
+        "is_available": c.is_available,
+        "latitude": c.latitude,
+        "longitude": c.longitude,
+        "zone_ids": [z.id for z in c.zones.all()],
+        "zones": [z.name for z in c.zones.all()],
+    }
+
+
+def _create_courier(request):
+    name = (request.data.get("name") or "").strip()
+    phone = (request.data.get("phone") or "").strip()
+    email = (request.data.get("email") or "").strip().lower()
+    if not name or not phone:
+        return Response({"detail": "Nom et téléphone obligatoires."}, status=status.HTTP_400_BAD_REQUEST)
+    if not email:
+        return Response({"detail": "Email obligatoire (compte livreur)."}, status=status.HTTP_400_BAD_REQUEST)
+    if Courier.objects.filter(phone=phone).exists():
+        return Response({"detail": "Un livreur avec ce téléphone existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
+
+    from accounts.emails import send_account_invite
+    from accounts.models import User
+
+    user = User.objects.filter(email__iexact=email).first()
+    created_user = False
+    if user is None:
+        user = User(email=email, full_name=name, role=User.Role.COURIER)
+        if not User.objects.filter(phone=phone).exists():
+            user.phone = phone
+        user.set_unusable_password()
+        user.save()
+        created_user = True
+    elif user.role != User.Role.COURIER:
+        user.role = User.Role.COURIER
+        user.save(update_fields=["role"])
+
+    courier = Courier.objects.create(
+        user=user,
+        name=name,
+        phone=phone,
+        city=(request.data.get("city") or "Douala").strip(),
+        vehicle=(request.data.get("vehicle") or "Moto").strip(),
+        is_active=bool(request.data.get("is_active", True)),
+        is_available=bool(request.data.get("is_available", True)),
+        latitude=_float_or_none(request.data.get("latitude")),
+        longitude=_float_or_none(request.data.get("longitude")),
     )
+    zone_ids = request.data.get("zone_ids") or []
+    if zone_ids:
+        courier.zones.set(DeliveryZone.objects.filter(id__in=zone_ids))
+    # Email d'activation (définir le mot de passe) si compte neuf.
+    if created_user or not user.has_usable_password():
+        send_account_invite(user)
+    return Response(_courier_dict(courier), status=status.HTTP_201_CREATED)
+
+
+@api_view(["PATCH", "DELETE"])
+@permission_classes([IsAdminRole])
+def admin_courier_detail(request, pk):
+    c = Courier.objects.filter(pk=pk).first()
+    if not c:
+        return Response({"detail": "Livreur introuvable."}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == "DELETE":
+        # Désactive (conserve l'historique) s'il a déjà des courses, sinon supprime.
+        if Delivery.objects.filter(courier=c).exists():
+            c.is_active = False
+            c.is_available = False
+            c.save(update_fields=["is_active", "is_available"])
+            return Response({"detail": "Livreur désactivé (historique conservé)."})
+        c.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    d = request.data
+    for f in ("name", "city", "vehicle"):
+        if f in d:
+            setattr(c, f, (d.get(f) or "").strip())
+    if "phone" in d:
+        phone = (d.get("phone") or "").strip()
+        if phone and Courier.objects.filter(phone=phone).exclude(pk=c.pk).exists():
+            return Response({"detail": "Téléphone déjà utilisé."}, status=status.HTTP_400_BAD_REQUEST)
+        c.phone = phone
+    for b in ("is_active", "is_available"):
+        if b in d:
+            setattr(c, b, bool(d[b]))
+    if "latitude" in d:
+        c.latitude = _float_or_none(d.get("latitude"))
+    if "longitude" in d:
+        c.longitude = _float_or_none(d.get("longitude"))
+    c.save()
+    if "zone_ids" in d:
+        c.zones.set(DeliveryZone.objects.filter(id__in=(d.get("zone_ids") or [])))
+    return Response(_courier_dict(c))
 
 
 @api_view(["POST"])
@@ -122,6 +225,8 @@ def _zone_dict(z: DeliveryZone) -> dict:
         "eta_minutes": z.eta_minutes,
         "is_active": z.is_active,
         "order": z.order,
+        "latitude": z.latitude,
+        "longitude": z.longitude,
     }
 
 
@@ -145,6 +250,8 @@ def admin_delivery_zones(request):
             eta_minutes=eta,
             is_active=bool(request.data.get("is_active", True)),
             order=int(request.data.get("order") or 0),
+            latitude=_float_or_none(request.data.get("latitude")),
+            longitude=_float_or_none(request.data.get("longitude")),
         )
         return Response(_zone_dict(z), status=status.HTTP_201_CREATED)
 
@@ -190,6 +297,10 @@ def admin_delivery_zone_detail(request, pk):
         z.is_active = bool(d["is_active"]) if isinstance(d["is_active"], bool) else str(d["is_active"]).lower() in ("1", "true", "on")
     if "order" in d:
         z.order = int(d.get("order") or 0)
+    if "latitude" in d:
+        z.latitude = _float_or_none(d.get("latitude"))
+    if "longitude" in d:
+        z.longitude = _float_or_none(d.get("longitude"))
     z.save()
     return Response(_zone_dict(z))
 

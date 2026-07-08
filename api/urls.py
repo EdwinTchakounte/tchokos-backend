@@ -51,6 +51,7 @@ urlpatterns = [
     path("admin/deliveries/", admin_delivery_views.admin_deliveries, name="admin-deliveries"),
     path("admin/deliveries/<int:pk>/assign/", admin_delivery_views.admin_delivery_assign, name="admin-delivery-assign"),
     path("admin/couriers/", admin_delivery_views.admin_couriers, name="admin-couriers"),
+    path("admin/couriers/<int:pk>/", admin_delivery_views.admin_courier_detail, name="admin-courier-detail"),
     path("admin/delivery-zones/", admin_delivery_views.admin_delivery_zones, name="admin-delivery-zones"),
     path("admin/delivery-zones/<int:pk>/", admin_delivery_views.admin_delivery_zone_detail, name="admin-delivery-zone-detail"),
     path("admin/settlements/", admin_delivery_views.admin_settlements, name="admin-settlements"),
