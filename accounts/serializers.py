@@ -12,6 +12,17 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ["id", "email", "full_name", "phone", "role", "is_staff"]
         read_only_fields = ["id", "role", "is_staff"]
 
+    def validate_phone(self, value):
+        # Normalise le téléphone vide en None (l'unicité tolère plusieurs NULL)
+        value = (value or "").strip() or None
+        if value:
+            qs = User.objects.filter(phone=value)
+            if self.instance is not None:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError("Ce téléphone est déjà utilisé.")
+        return value
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
