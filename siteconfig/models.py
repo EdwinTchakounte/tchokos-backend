@@ -20,8 +20,12 @@ class BrandSettings(BaseGenericSetting):
 
     # Contact
     whatsapp_number = models.CharField(
-        "Numéro WhatsApp", max_length=30, blank=True,
+        "Numéro WhatsApp (commande)", max_length=30, blank=True,
         help_text="Format international sans +, ex: 2376XXXXXXXX",
+    )
+    whatsapp_arrivages = models.CharField(
+        "WhatsApp groupe arrivages", max_length=30, blank=True,
+        help_text="Numéro du canal « nouveaux arrivages ». Format sans +, ex: 2376XXXXXXXX",
     )
     phone = models.CharField("Téléphone", max_length=30, blank=True)
     email = models.EmailField("Email de contact", blank=True)
@@ -53,6 +57,7 @@ class BrandSettings(BaseGenericSetting):
         MultiFieldPanel(
             [
                 FieldPanel("whatsapp_number"),
+                FieldPanel("whatsapp_arrivages"),
                 FieldPanel("phone"),
                 FieldPanel("email"),
                 FieldPanel("address"),

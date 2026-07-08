@@ -110,6 +110,7 @@ def site_config(request):
         "site_name": s.site_name,
         "tagline": s.tagline,
         "whatsapp_number": s.whatsapp_number,
+        "whatsapp_arrivages": s.whatsapp_arrivages,
         "phone": s.phone,
         "email": s.email,
         "address": s.address,

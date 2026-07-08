@@ -126,7 +126,11 @@ def admin_create_product(request):
         image_url=d.get("image_url", ""),
         stock_quantity=int(d.get("stock_quantity") or 0),
         is_featured=str(d.get("is_featured", "")).lower() in ("1", "true", "on"),
-        is_active=True,
+        # Respecte le toggle « En ligne » du formulaire ; en ligne par défaut.
+        is_active=(
+            d["is_active"] if isinstance(d.get("is_active"), bool)
+            else str(d.get("is_active", "true")).lower() in ("1", "true", "on")
+        ),
     )
     return Response(_product_dict(p, request), status=status.HTTP_201_CREATED)
 

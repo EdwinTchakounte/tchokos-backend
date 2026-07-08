@@ -1,63 +1,64 @@
-"""Peuple la base avec le catalogue Tchokos (catégories + produits) et les
-réglages de marque réels, avec de vraies images (Unsplash, via image_url).
+"""Peuple la base avec le catalogue RÉEL de Tchokos, calqué sur la boutique
+officielle **tchokos.shop** (source de vérité).
 
-Données calées sur une recherche web (catalogue, positionnement, contacts) —
-prix alignés sur le marché grossiste de Douala. Idempotent.
+- Catégories par cible (Homme / Femme / Enfant / Sneakers unisexe).
+- 12 produits réels (Nike, Adidas, Jordan, Puma, Reebok, New Balance) aux prix
+  affichés sur tchokos.shop, avec un **prix barré** pour matérialiser le
+  positionnement « 🔨 on casse le prix ».
+- Vraies photos produits de tchokos.shop (via image_url) quand elles existent,
+  sinon visuels sneakers stables (Unsplash).
+- Réglages de marque (WhatsApp, slogan, réseaux) alignés sur la boutique.
 
-Usage : python manage.py seed_demo
+Idempotent (update_or_create par slug). Usage : python manage.py seed_demo
 """
-import random
-
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 from django.utils.text import slugify
 
 from catalog.models import Category, Product
 from siteconfig.models import BrandSettings
 
-IMG = "https://images.unsplash.com/photo-{}?w=800&q=80&auto=format&fit=crop"
+UNSPLASH = "https://images.unsplash.com/photo-{}?w=800&q=80&auto=format&fit=crop"
+SHOP = "https://tchokos.shop/images/{}"
 
-# (catégorie, description, id image Unsplash)
+# (nom, description, cible, image)
 CATEGORIES = [
-    ("Baskets & Sneakers", "Nike, New Balance, Vans… le sport et la rue à prix grossiste.", "1542291026-7eec264c27ff"),
-    ("Chaussures de ville", "Mocassins, derbies et classiques pour homme.", "1614252369475-531eba835eb1"),
-    ("Sandales & Claquettes", "Sandales, claquettes et tongs pour toute la famille.", "1561808843-7adeb9606939"),
-    ("Chaussures femme", "Escarpins, talons et bottes tendance.", "1535043934128-cf0b28d52f95"),
-    ("Chaussures enfant", "Confort et style pour les plus jeunes, et le scolaire.", "1518894781321-630e638d0742"),
-    ("Vêtements homme", "Prêt-à-porter et sportswear homme.", "1547996160-81dfa63595aa"),
-    ("Vêtements femme", "Robes et prêt-à-porter femme.", "1434056886845-dac89ffe9b56"),
-    ("Sacs & Bagagerie", "Sacs à dos, sacs à main et valises de voyage.", "1584917865442-de89df76afd3"),
-    ("Montres & Bijoux", "Montres et accessoires pour compléter la tenue.", "1523275335684-37898b6baf30"),
+    ("Chaussures Homme", "Sneakers Nike, Adidas & Jordan pour homme — à prix cassé.",
+     "homme", SHOP.format("shoe-1.png")),
+    ("Chaussures Femme", "Élégance, tendance et confort — la sélection femme Tchokos.",
+     "femme", UNSPLASH.format("1595950653106-6c9ebd614d3a")),
+    ("Chaussures Enfant", "Solides, colorées et légères — pour les plus jeunes.",
+     "enfant", UNSPLASH.format("1514989940723-e8e51635b782")),
+    ("Sneakers Unisexe", "Les modèles cultes qui vont à tout le monde.",
+     "unisexe", SHOP.format("shoe-2.png")),
 ]
 
-# (catégorie, nom, marque, prix, prix barré, cible, badge, id image)
+# (catégorie, nom, marque, prix, prix_barré, cible, badge, image, featured)
 PRODUCTS = [
-    ("Baskets & Sneakers", "Basket sport homme Nike Air", "Nike", 15000, None, "homme", "bestseller", "1542291026-7eec264c27ff"),
-    ("Baskets & Sneakers", "Sneakers New Balance 740", "New Balance", 14000, None, "unisexe", "", "1556906781-9a412961c28c"),
-    ("Baskets & Sneakers", "Baskets Vans toile", "Vans", 9000, 12000, "unisexe", "promo", "1607522370275-f14206abe5d3"),
-    ("Baskets & Sneakers", "Sneakers femme tendance", "Tchokos", 8500, None, "femme", "nouveau", "1595950653106-6c9ebd614d3a"),
-    ("Chaussures de ville", "Mocassins cuir homme marron", "Tchokos", 18000, None, "homme", "", "1533867617858-e7b97e060509"),
-    ("Chaussures de ville", "Chaussures de ville derby noir", "Tchokos", 16000, 20000, "homme", "promo", "1531310197839-ccf54634509e"),
-    ("Sandales & Claquettes", "Sandales femme à strass", "Tchokos", 9500, None, "femme", "nouveau", "1543163521-1bf539c55dd2"),
-    ("Sandales & Claquettes", "Claquettes homme", "Tchokos", 6000, None, "homme", "", "1603487742131-4160ec999306"),
-    ("Chaussures femme", "Escarpins femme talon", "Tchokos", 12000, None, "femme", "bestseller", "1535043934128-cf0b28d52f95"),
-    ("Chaussures femme", "Bottes femme mi-saison", "Tchokos", 17000, 22000, "femme", "promo", "1610398752800-146f269dfcc8"),
-    ("Chaussures enfant", "Chaussures scolaires enfant", "Tchokos", 7000, None, "enfant", "", "1628253747716-0c4f5c90fdda"),
-    ("Chaussures enfant", "Baskets enfant colorées", "Tchokos", 8000, 10000, "enfant", "promo", "1514989940723-e8e51635b782"),
-    ("Vêtements homme", "T-shirt sport homme", "Tchokos", 5000, None, "homme", "", "1576566588028-4147f3842f27"),
-    ("Vêtements homme", "Veste / manteau homme", "Tchokos", 25000, 30000, "homme", "promo", "1591047139829-d91aecb6caea"),
-    ("Vêtements femme", "Robe femme tendance", "Tchokos", 12000, None, "femme", "nouveau", "1595777457583-95e059d581b8"),
-    ("Sacs & Bagagerie", "Sac à dos étudiant", "Tchokos", 9000, None, "unisexe", "", "1553062407-98eeb64c6a62"),
-    ("Sacs & Bagagerie", "Sac à main femme", "Tchokos", 8000, None, "femme", "bestseller", "1584917865442-de89df76afd3"),
-    ("Sacs & Bagagerie", "Set 3 valises de voyage", "Tchokos", 35000, 45000, "unisexe", "promo", "1565026057447-bc90a3dceb87"),
-    ("Montres & Bijoux", "Montre homme sport", "Tchokos", 6000, None, "homme", "nouveau", "1523275335684-37898b6baf30"),
+    ("Chaussures Homme", "Nike Glow Edition", "Nike", 25000, 32000, "homme", "bestseller", SHOP.format("shoe-1.png"), True),
+    ("Chaussures Homme", "Nike Air Max Crystal Gold", "Nike", 35000, 45000, "homme", "bestseller", SHOP.format("shoe-3.png"), True),
+    ("Chaussures Homme", "Jordan Retro Classic", "Jordan", 28000, 36000, "homme", "nouveau", UNSPLASH.format("1542291026-7eec264c27ff"), True),
+    ("Chaussures Homme", "Reebok Classic Homme", "Reebok", 15000, 20000, "homme", "promo", UNSPLASH.format("1607522370275-f14206abe5d3"), False),
+
+    ("Sneakers Unisexe", "Adidas Neon Boost", "Adidas", 22000, 28000, "unisexe", "nouveau", SHOP.format("shoe-2.png"), True),
+    ("Sneakers Unisexe", "New Balance 574", "New Balance", 19000, 25000, "unisexe", "bestseller", UNSPLASH.format("1556906781-9a412961c28c"), True),
+
+    ("Chaussures Femme", "Nike Air Force 1 Femme", "Nike", 20000, 27000, "femme", "nouveau", UNSPLASH.format("1595950653106-6c9ebd614d3a"), True),
+    ("Chaussures Femme", "Puma Femme Élégance", "Puma", 18000, 24000, "femme", "promo", UNSPLASH.format("1543163521-1bf539c55dd2"), False),
+    ("Chaussures Femme", "Puma RS-X Femme", "Puma", 17000, 23000, "femme", "nouveau", UNSPLASH.format("1600185365483-26d7a4cc7519"), False),
+
+    ("Chaussures Enfant", "Adidas Kids Superstar", "Adidas", 12000, 16000, "enfant", "promo", UNSPLASH.format("1514989940723-e8e51635b782"), False),
+    ("Chaussures Enfant", "Nike Cortez Enfant", "Nike", 10000, 14000, "enfant", "promo", UNSPLASH.format("1628253747716-0c4f5c90fdda"), False),
+    ("Chaussures Enfant", "Jordan Kids", "Jordan", 13000, 18000, "enfant", "promo", UNSPLASH.format("1518894781321-630e638d0742"), False),
 ]
 
 BRAND = {
     "site_name": "Tchokos",
-    "tagline": "Le super grossiste chaussures & vêtements d'Akwa, Douala.",
-    "whatsapp_number": "237673398046",
-    "phone": "+237 6 73 39 80 46",
-    "email": "contact@tchokos-sarl.com",  # email public (footer / contact)
+    "tagline": "🔨 On casse le prix au marteau — Nike, Adidas & Jordan à prix grossiste.",
+    "whatsapp_number": "237688094767",   # numéro de commande officiel (tchokos.shop)
+    "whatsapp_arrivages": "237659360604",  # groupe WhatsApp « nouveaux arrivages »
+    "phone": "+237 688 094 767",
+    "email": "contact@tchokos-sarl.com",
     "address": "Douala, Akwa, rond-point Douche, immeuble Socsuba (en face du Faya Hôtel)",
     "tiktok_url": "https://www.tiktok.com/@tchokos.sarl",
     "facebook_url": "https://www.facebook.com/tchokosgrossiste",
@@ -66,53 +67,66 @@ BRAND = {
 
 
 class Command(BaseCommand):
-    help = "Catalogue Tchokos + réglages de marque (vraies images)."
+    help = "Catalogue réel Tchokos (calqué sur tchokos.shop) + réglages de marque."
 
     def handle(self, *args, **options):
+        # 1) Réglages de marque
         brand = BrandSettings.load()
         for k, v in BRAND.items():
             setattr(brand, k, v)
         brand.save()
-        self.stdout.write("Réglages marque Tchokos mis à jour.")
+        self.stdout.write("✔ Réglages marque alignés sur tchokos.shop.")
 
+        # 2) Catégories
         cat_objs = {}
-        for order, (name, desc, img) in enumerate(CATEGORIES):
+        for order, (name, desc, target, img) in enumerate(CATEGORIES):
             cat, _ = Category.objects.update_or_create(
                 slug=slugify(name),
-                defaults={
-                    "name": name, "description": desc,
-                    "order": order, "image_url": IMG.format(img),
-                },
+                defaults={"name": name, "description": desc, "order": order,
+                          "image_url": img, "is_active": True},
             )
             cat_objs[name] = cat
-        self.stdout.write(f"{len(CATEGORIES)} catégories prêtes.")
+        self.stdout.write(f"✔ {len(CATEGORIES)} catégories prêtes.")
 
-        rng = random.Random(42)
-        for cat_name, pname, brand_name, price, compare, target, badge, img in PRODUCTS:
-            is_shoe = any(k in cat_name for k in ("Chaussure", "Sneakers", "Sandales"))
+        # 3) Produits (prix cassés = compare_at_price > price → réduction affichée)
+        seeded_slugs = []
+        for cat_name, name, brand_name, price, compare, target, badge, img, feat in PRODUCTS:
+            sizes = "28, 30, 32, 34, 36" if target == "enfant" else "39, 40, 41, 42, 43"
+            slug = slugify(name)
+            seeded_slugs.append(slug)
             Product.objects.update_or_create(
-                slug=slugify(pname),
+                slug=slug,
                 defaults={
                     "category": cat_objs[cat_name],
-                    "name": pname,
+                    "name": name,
                     "brand": brand_name,
                     "price": price,
                     "compare_at_price": compare,
                     "target": target,
                     "badge": badge,
-                    "image_url": IMG.format(img),
-                    "stock_quantity": rng.randint(5, 60),
-                    "sizes": "39, 40, 41, 42, 43" if is_shoe else "S, M, L, XL",
-                    "is_featured": rng.random() > 0.45,
+                    "image_url": img,
+                    "stock_quantity": 30,
+                    "sizes": sizes,
+                    "is_active": True,
+                    "is_featured": feat,
                     "description": (
-                        f"{pname} disponible chez Tchokos, le super grossiste d'Akwa. "
-                        "Qualité et prix imbattables. Commande facile via WhatsApp, "
-                        "livraison à Douala, paiement Mobile Money."
-                    ),
+                        f"{name} disponible chez Tchokos, le super grossiste d'Akwa (Douala). "
+                        f"Prix cassé : {price:,} FCFA au lieu de {compare:,} FCFA. "
+                        "Commande facile via WhatsApp, livraison à Douala, paiement Mobile Money."
+                    ).replace(",", " "),
                 },
             )
 
+        # 4) Masque les éventuels produits de test (rendu propre) sans rien supprimer.
+        hidden = (
+            Product.objects.filter(Q(name__icontains="test") | Q(name__icontains="démo"))
+            .exclude(slug__in=seeded_slugs)
+            .update(is_active=False)
+        )
+        if hidden:
+            self.stdout.write(f"✔ {hidden} produit(s) de test masqué(s).")
+
         self.stdout.write(self.style.SUCCESS(
-            f"Seed OK : {Category.objects.count()} catégories, "
-            f"{Product.objects.count()} produits (images Unsplash)."
+            f"Seed OK : {Category.objects.filter(is_active=True).count()} catégories, "
+            f"{Product.objects.filter(is_active=True).count()} produits actifs."
         ))
