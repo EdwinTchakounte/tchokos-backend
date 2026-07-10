@@ -29,11 +29,20 @@ urlpatterns = [
 
 
 if settings.DEBUG:
-    from django.conf.urls.static import static
     from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
     urlpatterns += staticfiles_urlpatterns()
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# Fichiers média (photos produits téléversées) : servis par Django, y compris en
+# prod. Le nginx central partagé (`backend-nginx-1`) ne monte PAS le volume média
+# de Tchokos ; il proxifie donc /media/ vers ce conteneur, qui lit le fichier
+# depuis MEDIA_ROOT (volume media_volume). `serve` fonctionne quel que soit DEBUG.
+from django.urls import re_path  # noqa: E402
+from django.views.static import serve as media_serve  # noqa: E402
+
+urlpatterns += [
+    re_path(r"^media/(?P<path>.*)$", media_serve, {"document_root": settings.MEDIA_ROOT}),
+]
 
 urlpatterns = urlpatterns + [
     path("", include(wagtail_urls)),
