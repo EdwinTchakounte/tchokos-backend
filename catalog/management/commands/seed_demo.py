@@ -5,8 +5,8 @@ officielle **tchokos.shop** (source de vérité).
 - 12 produits réels (Nike, Adidas, Jordan, Puma, Reebok, New Balance) aux prix
   affichés sur tchokos.shop, avec un **prix barré** pour matérialiser le
   positionnement « 🔨 on casse le prix ».
-- Vraies photos produits de tchokos.shop (via image_url) quand elles existent,
-  sinon visuels sneakers stables (Unsplash).
+- Visuels sneakers stables (Unsplash) par défaut. Les VRAIES photos produits
+  s'ajoutent ensuite via le CMS (upload → /media, auto-hébergées).
 - Réglages de marque (WhatsApp, slogan, réseaux) alignés sur la boutique.
 
 Idempotent (update_or_create par slug). Usage : python manage.py seed_demo
@@ -19,28 +19,27 @@ from catalog.models import Category, Product
 from siteconfig.models import BrandSettings
 
 UNSPLASH = "https://images.unsplash.com/photo-{}?w=800&q=80&auto=format&fit=crop"
-SHOP = "https://tchokos.shop/images/{}"
 
 # (nom, description, cible, image)
 CATEGORIES = [
     ("Chaussures Homme", "Sneakers Nike, Adidas & Jordan pour homme — à prix cassé.",
-     "homme", SHOP.format("shoe-1.png")),
+     "homme", UNSPLASH.format("1542291026-7eec264c27ff")),
     ("Chaussures Femme", "Élégance, tendance et confort — la sélection femme Tchokos.",
      "femme", UNSPLASH.format("1595950653106-6c9ebd614d3a")),
     ("Chaussures Enfant", "Solides, colorées et légères — pour les plus jeunes.",
      "enfant", UNSPLASH.format("1514989940723-e8e51635b782")),
     ("Sneakers Unisexe", "Les modèles cultes qui vont à tout le monde.",
-     "unisexe", SHOP.format("shoe-2.png")),
+     "unisexe", UNSPLASH.format("1600185365483-26d7a4cc7519")),
 ]
 
 # (catégorie, nom, marque, prix, prix_barré, cible, badge, image, featured)
 PRODUCTS = [
-    ("Chaussures Homme", "Nike Glow Edition", "Nike", 25000, 32000, "homme", "bestseller", SHOP.format("shoe-1.png"), True),
-    ("Chaussures Homme", "Nike Air Max Crystal Gold", "Nike", 35000, 45000, "homme", "bestseller", SHOP.format("shoe-3.png"), True),
+    ("Chaussures Homme", "Nike Glow Edition", "Nike", 25000, 32000, "homme", "bestseller", UNSPLASH.format("1556906781-9a412961c28c"), True),
+    ("Chaussures Homme", "Nike Air Max Crystal Gold", "Nike", 35000, 45000, "homme", "bestseller", UNSPLASH.format("1518894781321-630e638d0742"), True),
     ("Chaussures Homme", "Jordan Retro Classic", "Jordan", 28000, 36000, "homme", "nouveau", UNSPLASH.format("1542291026-7eec264c27ff"), True),
     ("Chaussures Homme", "Reebok Classic Homme", "Reebok", 15000, 20000, "homme", "promo", UNSPLASH.format("1607522370275-f14206abe5d3"), False),
 
-    ("Sneakers Unisexe", "Adidas Neon Boost", "Adidas", 22000, 28000, "unisexe", "nouveau", SHOP.format("shoe-2.png"), True),
+    ("Sneakers Unisexe", "Adidas Neon Boost", "Adidas", 22000, 28000, "unisexe", "nouveau", UNSPLASH.format("1543163521-1bf539c55dd2"), True),
     ("Sneakers Unisexe", "New Balance 574", "New Balance", 19000, 25000, "unisexe", "bestseller", UNSPLASH.format("1556906781-9a412961c28c"), True),
 
     ("Chaussures Femme", "Nike Air Force 1 Femme", "Nike", 20000, 27000, "femme", "nouveau", UNSPLASH.format("1595950653106-6c9ebd614d3a"), True),
